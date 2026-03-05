@@ -7,6 +7,10 @@
 .DS_Store
 Thumbs.db
 
+# Local config
+.mcp.json
+.claude/
+
 # Rust (future)
 target/
 Cargo.lock
