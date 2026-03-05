@@ -1,0 +1,28 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rust (future)
+target/
+Cargo.lock
+
+# Python (future)
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+
+# Node (future)
+node_modules/
+*.tgz
+
+# Internal docs (not yet public)
+docs/spec/
+docs/implementation/
+docs/integration/
