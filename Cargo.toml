@@ -3,6 +3,7 @@ members = [
     "crates/acp-core",
     "crates/acp-store",
     "crates/acp-graph",
+    "crates/acp-embeddings",
 ]
 resolver = "2"
 
