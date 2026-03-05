@@ -16,6 +16,19 @@ fn enum_to_sql<T: serde::Serialize>(val: &T) -> Result<String, AcpError> {
     Ok(json.as_str().unwrap_or_default().to_string())
 }
 
+/// Escape a user query string for safe use in FTS5 MATCH.
+/// Wraps each word in double quotes to prevent FTS5 operator interpretation.
+fn fts5_escape(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|word| {
+            let escaped = word.replace('"', "\"\"");
+            format!("\"{}\"", escaped)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[async_trait]
 impl MemoryStore for SqliteStore {
     async fn store(&self, layer: Layer, entry: StoreEntry) -> Result<EntryId, AcpError> {
@@ -423,7 +436,7 @@ impl SqliteStore {
                  AND e.deleted_at IS NULL
                  ORDER BY rank
                  LIMIT ?2",
-                Some(text.clone()),
+                Some(fts5_escape(text)),
             )
         } else {
             (
@@ -462,7 +475,7 @@ impl SqliteStore {
                  AND se.deleted_at IS NULL
                  ORDER BY rank
                  LIMIT ?2",
-                Some(text.clone()),
+                Some(fts5_escape(text)),
             )
         } else {
             (
@@ -495,6 +508,7 @@ impl SqliteStore {
         let top_k = query.top_k.unwrap_or(10) as i64;
 
         if let Some(ref text) = query.text {
+            let escaped = fts5_escape(text);
             let mut s = conn
                 .prepare(
                     "SELECT sk.id, sk.name || ': ' || sk.description, sk.success_rate
@@ -506,7 +520,7 @@ impl SqliteStore {
                 )
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
             let rows = s
-                .query_map(params![text, top_k], |row| {
+                .query_map(params![escaped, top_k], |row| {
                     Ok(RecallEntry {
                         id: EntryId(row.get(0)?),
                         layer: Layer::Procedural,
