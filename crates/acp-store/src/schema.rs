@@ -196,6 +196,25 @@ CREATE TABLE IF NOT EXISTS skills (
 
 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
 
+-- FTS for skills
+CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+    name,
+    description,
+    instruction,
+    content='skills',
+    content_rowid='rowid'
+);
+
+CREATE TRIGGER IF NOT EXISTS skills_fts_insert AFTER INSERT ON skills BEGIN
+    INSERT INTO skills_fts(rowid, name, description, instruction)
+    VALUES (new.rowid, new.name, new.description, new.instruction);
+END;
+
+CREATE TRIGGER IF NOT EXISTS skills_fts_delete AFTER DELETE ON skills BEGIN
+    INSERT INTO skills_fts(skills_fts, rowid, name, description, instruction)
+    VALUES ('delete', old.rowid, old.name, old.description, old.instruction);
+END;
+
 -- =========================================================================
 -- 5. SNAPSHOTS
 -- =========================================================================

@@ -210,6 +210,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_store_and_recall_skill() {
+        use acp_core::types::skill::*;
+
+        let store = SqliteStore::in_memory().unwrap();
+        let skill = SkillObject {
+            id: EntryId::new("skill"),
+            name: "git-commit".to_string(),
+            version: semver::Version::new(1, 0, 0),
+            description: "Create well-formatted git commits".to_string(),
+            instruction: "Run git add then git commit with a descriptive message".to_string(),
+            trigger: SkillTrigger {
+                patterns: vec![],
+                context_conditions: vec![],
+                explicit_invocation: true,
+            },
+            dependencies: SkillDependencies {
+                tools_required: vec!["bash".to_string()],
+                skills_required: vec![],
+                min_context_window: None,
+            },
+            performance: SkillPerformance {
+                invocation_count: 0,
+                success_rate: 0.0,
+                avg_tokens_per_use: 0.0,
+                avg_latency_ms: 0.0,
+                last_used: None,
+            },
+            changelog: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let id = store
+            .store(Layer::Procedural, StoreEntry::Skill(skill))
+            .await
+            .unwrap();
+        assert!(id.0.starts_with("skill-"));
+
+        let result = store
+            .recall(RecallQuery {
+                text: Some("git commit".to_string()),
+                layers: vec![Layer::Procedural],
+                top_k: Some(5),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.entries[0].content.contains("git-commit"));
+    }
+
+    #[tokio::test]
     async fn test_recall_without_text_returns_recent() {
         let store = SqliteStore::in_memory().unwrap();
 
