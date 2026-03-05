@@ -13,19 +13,19 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Storage directory for agent memory
-    #[arg(long, default_value = ".acp", env = "ACP_STORAGE")]
+    #[arg(long, global = true, default_value = ".acp", env = "ACP_STORAGE")]
     pub storage: PathBuf,
 
     /// Embedding provider (mock for testing)
-    #[arg(long, default_value = "mock", env = "ACP_EMBEDDING_PROVIDER")]
+    #[arg(long, global = true, default_value = "mock", env = "ACP_EMBEDDING_PROVIDER")]
     pub embedding_provider: String,
 
     /// Transport (stdio)
-    #[arg(long, default_value = "stdio")]
+    #[arg(long, global = true, default_value = "stdio")]
     pub transport: String,
 
     /// Log level
-    #[arg(long, default_value = "info", env = "ACP_LOG_LEVEL")]
+    #[arg(long, global = true, default_value = "info", env = "ACP_LOG_LEVEL")]
     pub log_level: String,
 }
 
