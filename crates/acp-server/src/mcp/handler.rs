@@ -13,8 +13,17 @@ fn require_params(params: &Value) -> Result<&Value, AcpError> {
 
 impl AcpServer {
     /// Dispatch a JSON-RPC request to the appropriate handler.
+    /// Supports both MCP protocol methods and native ACP methods.
     pub async fn handle_request(&self, request: JsonRpcRequest) -> JsonRpcResponse {
         let result = match request.method.as_str() {
+            // ── MCP standard methods ──────────────────────────
+            "initialize" => self.mcp_initialize().await,
+            "notifications/initialized" => return self.mcp_notification_ack(&request),
+            "ping" => Ok(json!({})),
+            "tools/list" => self.mcp_tools_list().await,
+            "tools/call" => self.mcp_tools_call(&request.params).await,
+
+            // ── Native ACP methods (for direct testing) ──────
             "acp.memory.store" => self.handle_memory_store(&request.params).await,
             "acp.memory.recall" => self.handle_memory_recall(&request.params).await,
             "acp.memory.forget" => self.handle_memory_forget(&request.params).await,
@@ -25,7 +34,7 @@ impl AcpServer {
             "acp.context.query" => self.handle_context_query(request.params).await,
             "acp.context.subgraph" => self.handle_context_subgraph(&request.params).await,
 
-            "acp.initialize" => self.handle_initialize().await,
+            "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
 
             other => Err(AcpError::MethodNotFound(other.to_string())),
@@ -51,7 +60,9 @@ impl AcpServer {
         }
     }
 
-    async fn handle_initialize(&self) -> Result<Value, AcpError> {
+    // ── MCP Protocol ──────────────────────────────────────────
+
+    async fn mcp_initialize(&self) -> Result<Value, AcpError> {
         Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {
@@ -63,6 +74,61 @@ impl AcpServer {
             }
         }))
     }
+
+    fn mcp_notification_ack(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        // Notifications have no id and require no response,
+        // but we still return an empty response for the transport layer.
+        JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            result: Some(json!({})),
+            error: None,
+            id: request.id.clone(),
+        }
+    }
+
+    async fn mcp_tools_list(&self) -> Result<Value, AcpError> {
+        let tools = super::tools::mcp_tools();
+        Ok(json!({ "tools": tools }))
+    }
+
+    async fn mcp_tools_call(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+
+        let tool_name = params["name"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing tool name".into()))?;
+
+        let arguments = &params["arguments"];
+
+        let result = match tool_name {
+            "acp_store" => self.handle_memory_store(arguments).await,
+            "acp_recall" => self.handle_memory_recall(arguments).await,
+            "acp_context" => {
+                // acp_context dispatches to subgraph query
+                self.handle_context_subgraph(arguments).await
+            }
+            other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
+        };
+
+        match result {
+            Ok(value) => Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": serde_json::to_string_pretty(&value)
+                        .unwrap_or_else(|_| value.to_string())
+                }]
+            })),
+            Err(e) => Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("Error: {}", e)
+                }],
+                "isError": true
+            })),
+        }
+    }
+
+    // ── ACP Memory Handlers ───────────────────────────────────
 
     async fn handle_memory_store(&self, params: &Value) -> Result<Value, AcpError> {
         let params = require_params(params)?;
@@ -182,6 +248,8 @@ impl AcpServer {
             "skills": stats.skills_count,
         }))
     }
+
+    // ── ACP Context Graph Handlers ────────────────────────────
 
     async fn handle_context_add_node(&self, params: Value) -> Result<Value, AcpError> {
         let node: types::graph::Node =

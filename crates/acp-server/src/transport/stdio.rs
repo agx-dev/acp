@@ -35,40 +35,41 @@ pub async fn serve_stdio(server: &AcpServer) -> Result<(), AcpError> {
                     }),
                     id: None,
                 };
-                let json = serde_json::to_string(&error_response).unwrap();
-                stdout
-                    .write_all(json.as_bytes())
-                    .await
-                    .map_err(|e| AcpError::Internal(e.to_string()))?;
-                stdout
-                    .write_all(b"\n")
-                    .await
-                    .map_err(|e| AcpError::Internal(e.to_string()))?;
-                stdout
-                    .flush()
-                    .await
-                    .map_err(|e| AcpError::Internal(e.to_string()))?;
+                write_response(&mut stdout, &error_response).await?;
                 continue;
             }
         };
 
+        // MCP notifications (no id) don't expect a response
+        let is_notification = request.id.is_none();
+
         let response = server.handle_request(request).await;
 
-        let json =
-            serde_json::to_string(&response).map_err(|e| AcpError::Internal(e.to_string()))?;
-        stdout
-            .write_all(json.as_bytes())
-            .await
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
-        stdout
-            .write_all(b"\n")
-            .await
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
-        stdout
-            .flush()
-            .await
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        if !is_notification {
+            write_response(&mut stdout, &response).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn write_response(
+    stdout: &mut tokio::io::Stdout,
+    response: &JsonRpcResponse,
+) -> Result<(), AcpError> {
+    let json =
+        serde_json::to_string(response).map_err(|e| AcpError::Internal(e.to_string()))?;
+    stdout
+        .write_all(json.as_bytes())
+        .await
+        .map_err(|e| AcpError::Internal(e.to_string()))?;
+    stdout
+        .write_all(b"\n")
+        .await
+        .map_err(|e| AcpError::Internal(e.to_string()))?;
+    stdout
+        .flush()
+        .await
+        .map_err(|e| AcpError::Internal(e.to_string()))?;
     Ok(())
 }

@@ -210,4 +210,146 @@ mod tests {
         assert_eq!(tools[1]["name"], "acp_store");
         assert_eq!(tools[2]["name"], "acp_context");
     }
+
+    // ── MCP Protocol Tests ────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_mcp_initialize() {
+        let srv = AcpServer::in_memory().unwrap();
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "initialize".into(),
+                params: json!({
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": { "name": "test-client", "version": "0.1.0" }
+                }),
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["serverInfo"]["name"], "acp-server");
+        assert_eq!(result["protocolVersion"], "2024-11-05");
+        assert!(result["capabilities"]["tools"].is_object());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tools_list() {
+        let srv = AcpServer::in_memory().unwrap();
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "tools/list".into(),
+                params: Value::Null,
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
+        assert_eq!(tools.len(), 3);
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"acp_recall"));
+        assert!(names.contains(&"acp_store"));
+        assert!(names.contains(&"acp_context"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tools_call_store_and_recall() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Store via tools/call
+        let store_resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "tools/call".into(),
+                params: json!({
+                    "name": "acp_store",
+                    "arguments": {
+                        "content": "Rust uses ownership for memory safety",
+                        "tags": ["rust", "memory"],
+                        "importance": 0.95
+                    }
+                }),
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(store_resp.error.is_none());
+        let content = &store_resp.result.unwrap()["content"];
+        assert_eq!(content[0]["type"], "text");
+        assert!(!content[0]["text"].as_str().unwrap().contains("Error"));
+
+        // Recall via tools/call
+        let recall_resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "tools/call".into(),
+                params: json!({
+                    "name": "acp_recall",
+                    "arguments": {
+                        "query": "ownership",
+                        "layers": ["semantic"],
+                        "top_k": 5
+                    }
+                }),
+                id: Some(json!(2)),
+            })
+            .await;
+        assert!(recall_resp.error.is_none());
+        let text = recall_resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(text.contains("ownership"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tools_call_unknown_tool() {
+        let srv = AcpServer::in_memory().unwrap();
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "tools/call".into(),
+                params: json!({
+                    "name": "nonexistent_tool",
+                    "arguments": {}
+                }),
+                id: Some(json!(1)),
+            })
+            .await;
+        // tools/call returns isError in content, not a JSON-RPC error
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_ping() {
+        let srv = AcpServer::in_memory().unwrap();
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "ping".into(),
+                params: Value::Null,
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_notification_initialized() {
+        let srv = AcpServer::in_memory().unwrap();
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "notifications/initialized".into(),
+                params: Value::Null,
+                id: None, // notifications have no id
+            })
+            .await;
+        // Should not error — notifications are silently acknowledged
+        assert!(resp.error.is_none());
+    }
 }
