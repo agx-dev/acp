@@ -51,6 +51,12 @@ pub enum AcpError {
     #[error("Invalid confidence value: {0}")]
     InvalidConfidence(f64),
 
+    #[error("Method not found: {0}")]
+    MethodNotFound(String),
+
+    #[error("Invalid params: {0}")]
+    InvalidParams(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 
@@ -78,6 +84,8 @@ impl AcpError {
             Self::DependencyMissing(_) => -32014,
             Self::ModelIncompatible(_) => -32015,
             Self::InvalidConfidence(_) => -32602,
+            Self::MethodNotFound(_) => -32601,
+            Self::InvalidParams(_) => -32602,
             Self::Internal(_) => -32603,
             Self::Serialization(_) => -32603,
         }
