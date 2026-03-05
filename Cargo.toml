@@ -4,6 +4,7 @@ members = [
     "crates/acp-store",
     "crates/acp-graph",
     "crates/acp-embeddings",
+    "crates/acp-server",
 ]
 resolver = "2"
 
