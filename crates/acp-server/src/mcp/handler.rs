@@ -33,7 +33,9 @@ impl AcpServer {
             "acp.context.addEdge" => self.handle_context_add_edge(request.params).await,
             "acp.context.query" => self.handle_context_query(request.params).await,
             "acp.context.subgraph" => self.handle_context_subgraph(&request.params).await,
-            "acp.graph.traverse"  => self.handle_graph_traverse(&request.params).await,
+            "acp.graph.traverse"    => self.handle_graph_traverse(&request.params).await,
+            "acp.graph.removeNode"  => self.handle_graph_remove_node(&request.params).await,
+            "acp.graph.removeEdge"  => self.handle_graph_remove_edge(&request.params).await,
 
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
@@ -306,5 +308,23 @@ impl AcpServer {
             .await?;
 
         Ok(json!({ "nodes": nodes }))
+    }
+
+    async fn handle_graph_remove_node(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let id = params["id"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing id".into()))?;
+        self.graph.remove_node(&EntryId(id.to_string())).await?;
+        Ok(json!({ "removed": true }))
+    }
+
+    async fn handle_graph_remove_edge(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let id = params["id"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing id".into()))?;
+        self.graph.remove_edge(&EntryId(id.to_string())).await?;
+        Ok(json!({ "removed": true }))
     }
 }

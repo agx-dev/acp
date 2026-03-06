@@ -414,4 +414,86 @@ mod tests {
         let nodes = resp.result.unwrap()["nodes"].as_array().unwrap().clone();
         assert_eq!(nodes.len(), 2);
     }
+
+    // ── Graph Remove Tests ──────────────────────────────────
+
+    #[tokio::test]
+    async fn test_graph_remove_node() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addNode".into(),
+            params: json!({
+                "id": "n1", "node_type": "task", "label": "Task",
+                "properties": {}, "episode_refs": [], "semantic_refs": [],
+                "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(1)),
+        })
+        .await;
+
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.graph.removeNode".into(),
+                params: json!({ "id": "n1" }),
+                id: Some(json!(2)),
+            })
+            .await;
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["removed"], true);
+    }
+
+    #[tokio::test]
+    async fn test_graph_remove_edge() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addNode".into(),
+            params: json!({
+                "id": "a", "node_type": "task", "label": "A",
+                "properties": {}, "episode_refs": [], "semantic_refs": [],
+                "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(1)),
+        })
+        .await;
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addNode".into(),
+            params: json!({
+                "id": "b", "node_type": "result", "label": "B",
+                "properties": {}, "episode_refs": [], "semantic_refs": [],
+                "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(2)),
+        })
+        .await;
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addEdge".into(),
+            params: json!({
+                "id": "e1", "source": "a", "target": "b",
+                "relation": "led_to", "weight": 1.0,
+                "created_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(3)),
+        })
+        .await;
+
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.graph.removeEdge".into(),
+                params: json!({ "id": "e1" }),
+                id: Some(json!(4)),
+            })
+            .await;
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["removed"], true);
+    }
 }
