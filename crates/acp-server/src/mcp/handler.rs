@@ -110,6 +110,9 @@ impl AcpServer {
                 // acp_context dispatches to subgraph query
                 self.handle_context_subgraph(arguments).await
             }
+            "acp_graph_traverse" => self.handle_graph_traverse(arguments).await,
+            "acp_graph_remove_node" => self.handle_graph_remove_node(arguments).await,
+            "acp_graph_remove_edge" => self.handle_graph_remove_edge(arguments).await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
         };
 

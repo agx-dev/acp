@@ -71,5 +71,46 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
                 "required": ["root"]
             }
         }),
+        json!({
+            "name": "acp_graph_traverse",
+            "description": "Traverse the context graph following a specific relation type from a starting node.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "start": { "type": "string", "description": "Starting node ID" },
+                    "relation": {
+                        "type": "string",
+                        "description": "Relation type to follow",
+                        "enum": ["caused_by", "led_to", "triggered", "part_of", "contains",
+                                 "depends_on", "blocked_by", "supports", "contradicts",
+                                 "refined_by", "used_for", "created_by", "modified_by", "resolved_by"]
+                    },
+                    "depth": { "type": "integer", "description": "Maximum traversal depth", "default": 2 }
+                },
+                "required": ["start", "relation"]
+            }
+        }),
+        json!({
+            "name": "acp_graph_remove_node",
+            "description": "Remove a node and all its connected edges from the context graph.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Node ID to remove" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "acp_graph_remove_edge",
+            "description": "Remove an edge from the context graph.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Edge ID to remove" }
+                },
+                "required": ["id"]
+            }
+        }),
     ]
 }

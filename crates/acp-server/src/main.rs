@@ -205,10 +205,13 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = crate::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 6);
         assert_eq!(tools[0]["name"], "acp_recall");
         assert_eq!(tools[1]["name"], "acp_store");
         assert_eq!(tools[2]["name"], "acp_context");
+        assert_eq!(tools[3]["name"], "acp_graph_traverse");
+        assert_eq!(tools[4]["name"], "acp_graph_remove_node");
+        assert_eq!(tools[5]["name"], "acp_graph_remove_edge");
     }
 
     // ── MCP Protocol Tests ────────────────────────────────────
@@ -248,11 +251,14 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 6);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
         assert!(names.contains(&"acp_context"));
+        assert!(names.contains(&"acp_graph_traverse"));
+        assert!(names.contains(&"acp_graph_remove_node"));
+        assert!(names.contains(&"acp_graph_remove_edge"));
     }
 
     #[tokio::test]
