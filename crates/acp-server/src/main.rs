@@ -352,4 +352,66 @@ mod tests {
         // Should not error — notifications are silently acknowledged
         assert!(resp.error.is_none());
     }
+
+    // ── Graph Traverse Test ─────────────────────────────────
+
+    #[tokio::test]
+    async fn test_graph_traverse() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Add nodes
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addNode".into(),
+            params: json!({
+                "id": "t1", "node_type": "task", "label": "Auth",
+                "properties": {}, "episode_refs": [], "semantic_refs": [],
+                "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(1)),
+        })
+        .await;
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addNode".into(),
+            params: json!({
+                "id": "t2", "node_type": "tool", "label": "JWT",
+                "properties": {}, "episode_refs": [], "semantic_refs": [],
+                "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(2)),
+        })
+        .await;
+
+        // Add edge
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.context.addEdge".into(),
+            params: json!({
+                "id": "e1", "source": "t1", "target": "t2",
+                "relation": "used_for", "weight": 1.0,
+                "created_at": "2025-01-01T00:00:00Z"
+            }),
+            id: Some(json!(3)),
+        })
+        .await;
+
+        // Traverse
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.graph.traverse".into(),
+                params: json!({
+                    "start": "t1",
+                    "relation": "used_for",
+                    "depth": 2
+                }),
+                id: Some(json!(4)),
+            })
+            .await;
+
+        assert!(resp.error.is_none());
+        let nodes = resp.result.unwrap()["nodes"].as_array().unwrap().clone();
+        assert_eq!(nodes.len(), 2);
+    }
 }

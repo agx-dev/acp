@@ -33,6 +33,7 @@ impl AcpServer {
             "acp.context.addEdge" => self.handle_context_add_edge(request.params).await,
             "acp.context.query" => self.handle_context_query(request.params).await,
             "acp.context.subgraph" => self.handle_context_subgraph(&request.params).await,
+            "acp.graph.traverse"  => self.handle_graph_traverse(&request.params).await,
 
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
@@ -286,5 +287,24 @@ impl AcpServer {
             .await?;
 
         Ok(json!(subgraph))
+    }
+
+    async fn handle_graph_traverse(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let start = params["start"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing start".into()))?;
+        let relation: types::graph::Relation = serde_json::from_value(
+            params["relation"].clone(),
+        )
+        .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let depth = params["depth"].as_u64().unwrap_or(2) as u32;
+
+        let nodes = self
+            .graph
+            .traverse(&EntryId(start.to_string()), relation, depth)
+            .await?;
+
+        Ok(json!({ "nodes": nodes }))
     }
 }
