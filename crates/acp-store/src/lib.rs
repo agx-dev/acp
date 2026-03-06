@@ -5,6 +5,7 @@
 
 mod memory;
 mod schema;
+mod skills;
 mod store;
 
 pub use store::{SqliteStore, StoreConfig};
@@ -291,5 +292,182 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.entries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_skill_register_and_get() {
+        use acp_core::SkillRegistry;
+        use acp_core::types::skill::*;
+
+        let store = SqliteStore::in_memory().unwrap();
+        let skill = SkillObject {
+            id: EntryId::new("skill"),
+            name: "code-review".to_string(),
+            version: semver::Version::new(1, 0, 0),
+            description: "Review code for quality issues".to_string(),
+            instruction: "Analyze the diff and provide feedback".to_string(),
+            trigger: SkillTrigger {
+                patterns: vec![TriggerPattern {
+                    regex: r"review|check".to_string(),
+                    confidence_threshold: 0.7,
+                }],
+                context_conditions: vec![],
+                explicit_invocation: false,
+            },
+            dependencies: SkillDependencies {
+                tools_required: vec!["bash".to_string()],
+                skills_required: vec![],
+                min_context_window: None,
+            },
+            performance: SkillPerformance {
+                invocation_count: 0,
+                success_rate: 0.0,
+                avg_tokens_per_use: 0.0,
+                avg_latency_ms: 0.0,
+                last_used: None,
+            },
+            changelog: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let id = store.register(skill).await.unwrap();
+        assert!(id.0.starts_with("skill-"));
+
+        let retrieved = store.get(&id).await.unwrap();
+        assert_eq!(retrieved.name, "code-review");
+        assert_eq!(retrieved.description, "Review code for quality issues");
+        assert_eq!(retrieved.dependencies.tools_required, vec!["bash"]);
+    }
+
+    #[tokio::test]
+    async fn test_skill_list() {
+        use acp_core::SkillRegistry;
+        use acp_core::types::skill::*;
+
+        let store = SqliteStore::in_memory().unwrap();
+        let make = |name: &str| SkillObject {
+            id: EntryId::new("skill"),
+            name: name.to_string(),
+            version: semver::Version::new(1, 0, 0),
+            description: format!("{} desc", name),
+            instruction: "do thing".to_string(),
+            trigger: SkillTrigger {
+                patterns: vec![],
+                context_conditions: vec![],
+                explicit_invocation: true,
+            },
+            dependencies: SkillDependencies {
+                tools_required: vec![],
+                skills_required: vec![],
+                min_context_window: None,
+            },
+            performance: SkillPerformance {
+                invocation_count: 0,
+                success_rate: 0.0,
+                avg_tokens_per_use: 0.0,
+                avg_latency_ms: 0.0,
+                last_used: None,
+            },
+            changelog: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        store.register(make("skill-b")).await.unwrap();
+        store.register(make("skill-a")).await.unwrap();
+
+        let all = store.list().await.unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].name, "skill-a"); // ORDER BY name
+        assert_eq!(all[1].name, "skill-b");
+    }
+
+    #[tokio::test]
+    async fn test_skill_update() {
+        use acp_core::SkillRegistry;
+        use acp_core::types::skill::*;
+
+        let store = SqliteStore::in_memory().unwrap();
+        let skill = SkillObject {
+            id: EntryId::new("skill"),
+            name: "old-name".to_string(),
+            version: semver::Version::new(1, 0, 0),
+            description: "old desc".to_string(),
+            instruction: "old instruction".to_string(),
+            trigger: SkillTrigger {
+                patterns: vec![],
+                context_conditions: vec![],
+                explicit_invocation: true,
+            },
+            dependencies: SkillDependencies {
+                tools_required: vec![],
+                skills_required: vec![],
+                min_context_window: None,
+            },
+            performance: SkillPerformance {
+                invocation_count: 0,
+                success_rate: 0.0,
+                avg_tokens_per_use: 0.0,
+                avg_latency_ms: 0.0,
+                last_used: None,
+            },
+            changelog: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let id = store.register(skill).await.unwrap();
+        let mut updated = store.get(&id).await.unwrap();
+        updated.name = "new-name".to_string();
+        updated.description = "new desc".to_string();
+        updated.version = semver::Version::new(2, 0, 0);
+
+        store.update(&id, updated).await.unwrap();
+
+        let retrieved = store.get(&id).await.unwrap();
+        assert_eq!(retrieved.name, "new-name");
+        assert_eq!(retrieved.description, "new desc");
+        assert_eq!(retrieved.version, semver::Version::new(2, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn test_skill_export() {
+        use acp_core::SkillRegistry;
+        use acp_core::types::skill::*;
+
+        let store = SqliteStore::in_memory().unwrap();
+        let skill = SkillObject {
+            id: EntryId::new("skill"),
+            name: "exportable".to_string(),
+            version: semver::Version::new(1, 0, 0),
+            description: "A skill".to_string(),
+            instruction: "do it".to_string(),
+            trigger: SkillTrigger {
+                patterns: vec![],
+                context_conditions: vec![],
+                explicit_invocation: true,
+            },
+            dependencies: SkillDependencies {
+                tools_required: vec![],
+                skills_required: vec![],
+                min_context_window: None,
+            },
+            performance: SkillPerformance {
+                invocation_count: 5,
+                success_rate: 0.9,
+                avg_tokens_per_use: 100.0,
+                avg_latency_ms: 50.0,
+                last_used: None,
+            },
+            changelog: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let id = store.register(skill).await.unwrap();
+        let portable = store.export(&id).await.unwrap();
+        assert_eq!(portable.skill.name, "exportable");
+        assert!(portable.source_agent.is_none());
     }
 }

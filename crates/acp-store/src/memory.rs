@@ -376,7 +376,7 @@ impl SqliteStore {
         Ok(id)
     }
 
-    fn store_skill(&self, sk: SkillObject) -> Result<EntryId, AcpError> {
+    pub(crate) fn store_skill(&self, sk: SkillObject) -> Result<EntryId, AcpError> {
         let id = EntryId::new("skill");
         let conn = self.conn();
 
