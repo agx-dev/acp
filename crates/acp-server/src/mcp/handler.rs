@@ -28,14 +28,23 @@ impl AcpServer {
             "acp.memory.recall" => self.handle_memory_recall(&request.params).await,
             "acp.memory.forget" => self.handle_memory_forget(&request.params).await,
             "acp.memory.stats" => self.handle_memory_stats().await,
+            "acp.memory.prune" => self.handle_memory_prune(&request.params).await,
 
+            // Canonical names (spec)
+            "acp.graph.add_node" => self.handle_context_add_node(request.params).await,
+            "acp.graph.add_edge" => self.handle_context_add_edge(request.params).await,
+            "acp.graph.query" => self.handle_context_query(request.params).await,
+            "acp.graph.subgraph" => self.handle_context_subgraph(&request.params).await,
+            "acp.graph.traverse" => self.handle_graph_traverse(&request.params).await,
+            "acp.graph.remove_node" => self.handle_graph_remove_node(&request.params).await,
+            "acp.graph.remove_edge" => self.handle_graph_remove_edge(&request.params).await,
+            // Legacy aliases
             "acp.context.addNode" => self.handle_context_add_node(request.params).await,
             "acp.context.addEdge" => self.handle_context_add_edge(request.params).await,
             "acp.context.query" => self.handle_context_query(request.params).await,
             "acp.context.subgraph" => self.handle_context_subgraph(&request.params).await,
-            "acp.graph.traverse"    => self.handle_graph_traverse(&request.params).await,
-            "acp.graph.removeNode"  => self.handle_graph_remove_node(&request.params).await,
-            "acp.graph.removeEdge"  => self.handle_graph_remove_edge(&request.params).await,
+            "acp.graph.removeNode" => self.handle_graph_remove_node(&request.params).await,
+            "acp.graph.removeEdge" => self.handle_graph_remove_edge(&request.params).await,
 
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
@@ -113,6 +122,7 @@ impl AcpServer {
             "acp_graph_traverse" => self.handle_graph_traverse(arguments).await,
             "acp_graph_remove_node" => self.handle_graph_remove_node(arguments).await,
             "acp_graph_remove_edge" => self.handle_graph_remove_edge(arguments).await,
+            "acp_memory_prune" => self.handle_memory_prune(arguments).await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
         };
 
@@ -153,29 +163,74 @@ impl AcpServer {
             })
             .unwrap_or_default();
 
-        let entry = SemanticEntry {
-            id: EntryId::new("sem"),
-            content: content.to_string(),
-            embedding: None,
-            source: types::semantic::SemanticSource::Manual,
-            confidence: Confidence::new(0.9).unwrap(),
-            importance,
-            access_count: 0,
-            last_accessed: None,
-            tags,
-            category: None,
-            domain: None,
-            protected: params["protected"].as_bool().unwrap_or(false),
-            decay_rate: 0.01,
-            provenance: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+        let layer_str = params["layer"].as_str().unwrap_or("semantic");
+
+        let (layer, entry) = match layer_str {
+            "episodic" => {
+                let role = match params["role"].as_str().unwrap_or("agent") {
+                    "user" => types::episode::Role::User,
+                    "system" => types::episode::Role::System,
+                    "tool" => types::episode::Role::Tool,
+                    _ => types::episode::Role::Agent,
+                };
+                let ep = types::episode::Episode {
+                    id: EntryId::new("ep"),
+                    seq_num: 0,
+                    timestamp: chrono::Utc::now(),
+                    episode_type: types::episode::EpisodeType::Observation,
+                    content: types::episode::EpisodeContent {
+                        role,
+                        text: content.to_string(),
+                        tool_name: params["tool_name"].as_str().map(String::from),
+                        tool_input: None,
+                        tool_output: None,
+                        tokens_input: None,
+                        tokens_output: None,
+                    },
+                    context: types::episode::EpisodeContext {
+                        session_id: params["session_id"]
+                            .as_str()
+                            .unwrap_or("default")
+                            .to_string(),
+                        conversation_id: params["conversation_id"].as_str().map(String::from),
+                        parent_episode: None,
+                        graph_ref: None,
+                    },
+                    outcome: None,
+                    metadata: types::episode::EpisodeMetadata {
+                        importance: Some(importance),
+                        trigger: None,
+                        tags,
+                        model_used: None,
+                        latency_ms: None,
+                    },
+                };
+                (Layer::Episodic, StoreEntry::Episode(ep))
+            }
+            "semantic" | _ => {
+                let entry = SemanticEntry {
+                    id: EntryId::new("sem"),
+                    content: content.to_string(),
+                    embedding: None,
+                    source: types::semantic::SemanticSource::Manual,
+                    confidence: Confidence::new(0.9).unwrap(),
+                    importance,
+                    access_count: 0,
+                    last_accessed: None,
+                    tags,
+                    category: None,
+                    domain: None,
+                    protected: params["protected"].as_bool().unwrap_or(false),
+                    decay_rate: 0.01,
+                    provenance: None,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                };
+                (Layer::Semantic, StoreEntry::Semantic(entry))
+            }
         };
 
-        let id = self
-            .store
-            .store(Layer::Semantic, StoreEntry::Semantic(entry))
-            .await?;
+        let id = self.store.store(layer, entry).await?;
 
         Ok(json!({ "id": id.0 }))
     }
@@ -252,6 +307,24 @@ impl AcpServer {
             "episodes": stats.episodes_count,
             "semantic": stats.semantic_count,
             "skills": stats.skills_count,
+        }))
+    }
+
+    async fn handle_memory_prune(&self, params: &Value) -> Result<Value, AcpError> {
+        let policy: acp_core::types::retention::RetentionPolicy = if params.is_null() {
+            Default::default()
+        } else {
+            serde_json::from_value(params.clone())
+                .map_err(|e| AcpError::InvalidParams(e.to_string()))?
+        };
+
+        let report = self.store.prune(&policy).await?;
+
+        Ok(json!({
+            "episodes_pruned": report.episodes_pruned,
+            "semantic_pruned": report.semantic_pruned,
+            "nodes_pruned": report.nodes_pruned,
+            "edges_pruned": report.edges_pruned,
         }))
     }
 

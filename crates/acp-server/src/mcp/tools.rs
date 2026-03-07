@@ -38,6 +38,12 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
                         "type": "string",
                         "description": "Content to memorize"
                     },
+                    "layer": {
+                        "type": "string",
+                        "enum": ["semantic", "episodic"],
+                        "description": "Memory layer to store in",
+                        "default": "semantic"
+                    },
                     "tags": {
                         "type": "array",
                         "items": { "type": "string" },
@@ -47,6 +53,16 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
                         "type": "number",
                         "description": "Importance score (0.0-1.0)",
                         "default": 0.7
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": ["user", "agent", "system", "tool"],
+                        "description": "Role for episodic entries",
+                        "default": "agent"
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session ID for episodic entries"
                     }
                 },
                 "required": ["content"]
@@ -110,6 +126,34 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
                     "id": { "type": "string", "description": "Edge ID to remove" }
                 },
                 "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "acp_memory_prune",
+            "description": "Prune old or low-importance memories according to retention policy. Removes expired episodes, low-importance semantic entries, and orphan graph nodes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "episodic": {
+                        "type": "object",
+                        "properties": {
+                            "max_episodes": { "type": "integer", "description": "Max episodes to keep" },
+                            "max_age_days": { "type": "integer", "description": "Max age in days" }
+                        }
+                    },
+                    "semantic": {
+                        "type": "object",
+                        "properties": {
+                            "min_importance": { "type": "number", "description": "Min importance threshold (0.0-1.0)" }
+                        }
+                    },
+                    "graph": {
+                        "type": "object",
+                        "properties": {
+                            "prune_orphans": { "type": "boolean", "description": "Remove orphan nodes", "default": true }
+                        }
+                    }
+                }
             }
         }),
     ]

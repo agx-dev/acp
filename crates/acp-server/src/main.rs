@@ -205,13 +205,14 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = crate::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
         assert_eq!(tools[0]["name"], "acp_recall");
         assert_eq!(tools[1]["name"], "acp_store");
         assert_eq!(tools[2]["name"], "acp_context");
         assert_eq!(tools[3]["name"], "acp_graph_traverse");
         assert_eq!(tools[4]["name"], "acp_graph_remove_node");
         assert_eq!(tools[5]["name"], "acp_graph_remove_edge");
+        assert_eq!(tools[6]["name"], "acp_memory_prune");
     }
 
     // ── MCP Protocol Tests ────────────────────────────────────
@@ -251,7 +252,7 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
@@ -259,6 +260,7 @@ mod tests {
         assert!(names.contains(&"acp_graph_traverse"));
         assert!(names.contains(&"acp_graph_remove_node"));
         assert!(names.contains(&"acp_graph_remove_edge"));
+        assert!(names.contains(&"acp_memory_prune"));
     }
 
     #[tokio::test]
@@ -357,6 +359,119 @@ mod tests {
             .await;
         // Should not error — notifications are silently acknowledged
         assert!(resp.error.is_none());
+    }
+
+    // ── Episodic Store Test ───────────────────────────────────
+
+    #[tokio::test]
+    async fn test_store_episodic() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.store".into(),
+                params: json!({
+                    "content": "User asked about hexagonal architecture",
+                    "layer": "episodic",
+                    "role": "user",
+                    "session_id": "session-42",
+                    "tags": ["architecture"],
+                    "importance": 0.8
+                }),
+                id: Some(json!(1)),
+            })
+            .await;
+
+        assert!(resp.error.is_none());
+        let id = resp.result.unwrap()["id"].as_str().unwrap().to_string();
+        assert!(id.starts_with("ep-"));
+
+        // Verify it shows in stats
+        let stats = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.stats".into(),
+                params: Value::Null,
+                id: Some(json!(2)),
+            })
+            .await;
+        assert_eq!(stats.result.unwrap()["episodes"], 1);
+
+        // Recall from episodic layer
+        let recall = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.recall".into(),
+                params: json!({
+                    "query": "hexagonal",
+                    "layers": ["episodic"],
+                }),
+                id: Some(json!(3)),
+            })
+            .await;
+        assert!(recall.error.is_none());
+        assert_eq!(recall.result.unwrap()["total"], 1);
+    }
+
+    // ── Memory Prune Test ────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_memory_prune() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Store a low-importance entry
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({
+                "content": "low importance data",
+                "importance": 0.05,
+            }),
+            id: Some(json!(1)),
+        })
+        .await;
+
+        // Store a high-importance entry
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({
+                "content": "high importance data",
+                "importance": 0.9,
+            }),
+            id: Some(json!(2)),
+        })
+        .await;
+
+        // Prune with min_importance = 0.1
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.prune".into(),
+                params: json!({
+                    "episodic": { "max_episodes": 10000, "max_age_days": 90, "eviction": "fifo" },
+                    "semantic": { "min_importance": 0.1 },
+                    "graph": { "prune_orphans": false }
+                }),
+                id: Some(json!(3)),
+            })
+            .await;
+
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["semantic_pruned"], 1);
+
+        // Verify only high-importance entry remains
+        let stats_resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.stats".into(),
+                params: Value::Null,
+                id: Some(json!(4)),
+            })
+            .await;
+        assert_eq!(stats_resp.result.unwrap()["semantic"], 1);
     }
 
     // ── Graph Traverse Test ─────────────────────────────────
