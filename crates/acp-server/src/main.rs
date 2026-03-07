@@ -29,13 +29,20 @@ async fn main() {
 }
 
 async fn run(args: cli::Cli) -> Result<(), acp_core::AcpError> {
+    let config = server::ServerConfig {
+        storage_path: args.storage,
+        embedding_provider: args.embedding_provider,
+        openai_api_key: args.openai_api_key,
+        openai_model: args.openai_model,
+    };
+
     match args.command {
         None | Some(cli::Commands::Serve) => {
-            let srv = server::AcpServer::new(args.storage)?;
+            let srv = server::AcpServer::with_config(config)?;
             transport::stdio::serve_stdio(&srv).await?;
         }
         Some(cli::Commands::Stats) => {
-            let srv = server::AcpServer::new(args.storage)?;
+            let srv = server::AcpServer::with_config(config)?;
             let stats = srv
                 .store
                 .stats(&[

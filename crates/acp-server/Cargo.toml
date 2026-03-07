@@ -10,6 +10,10 @@ description = "ACP Server — assembles all components and exposes ACP via MCP (
 name = "acp-server"
 path = "src/main.rs"
 
+[features]
+default = []
+openai = ["acp-embeddings/openai"]
+
 [dependencies]
 acp-core = { path = "../acp-core" }
 acp-store = { path = "../acp-store" }

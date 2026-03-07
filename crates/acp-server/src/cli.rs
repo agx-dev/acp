@@ -16,9 +16,22 @@ pub struct Cli {
     #[arg(long, global = true, default_value = ".acp", env = "ACP_STORAGE")]
     pub storage: PathBuf,
 
-    /// Embedding provider (mock for testing)
+    /// Embedding provider (mock or openai)
     #[arg(long, global = true, default_value = "mock", env = "ACP_EMBEDDING_PROVIDER")]
     pub embedding_provider: String,
+
+    /// OpenAI API key (required when --embedding-provider=openai)
+    #[arg(long, global = true, env = "OPENAI_API_KEY", hide = true)]
+    pub openai_api_key: Option<String>,
+
+    /// OpenAI model for embeddings
+    #[arg(
+        long,
+        global = true,
+        default_value = "text-embedding-3-small",
+        env = "ACP_OPENAI_MODEL"
+    )]
+    pub openai_model: String,
 
     /// Transport (stdio)
     #[arg(long, global = true, default_value = "stdio")]
