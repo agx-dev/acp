@@ -46,6 +46,14 @@ impl AcpServer {
             "acp.graph.removeNode" => self.handle_graph_remove_node(&request.params).await,
             "acp.graph.removeEdge" => self.handle_graph_remove_edge(&request.params).await,
 
+            // ── Skill methods ──────────────────────────────────
+            "acp.skill.register" => self.handle_skill_register(&request.params).await,
+            "acp.skill.get" => self.handle_skill_get(&request.params).await,
+            "acp.skill.list" => self.handle_skill_list().await,
+            "acp.skill.update" => self.handle_skill_update(&request.params).await,
+            "acp.skill.export" => self.handle_skill_export(&request.params).await,
+            "acp.skill.resolve" => self.handle_skill_resolve(&request.params).await,
+
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
 
@@ -123,6 +131,12 @@ impl AcpServer {
             "acp_graph_remove_node" => self.handle_graph_remove_node(arguments).await,
             "acp_graph_remove_edge" => self.handle_graph_remove_edge(arguments).await,
             "acp_memory_prune" => self.handle_memory_prune(arguments).await,
+            "acp_skill_register" => self.handle_skill_register(arguments).await,
+            "acp_skill_get" => self.handle_skill_get(arguments).await,
+            "acp_skill_list" => self.handle_skill_list().await,
+            "acp_skill_update" => self.handle_skill_update(arguments).await,
+            "acp_skill_export" => self.handle_skill_export(arguments).await,
+            "acp_skill_resolve" => self.handle_skill_resolve(arguments).await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
         };
 
@@ -402,5 +416,67 @@ impl AcpServer {
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
         self.graph.remove_edge(&EntryId(id.to_string())).await?;
         Ok(json!({ "removed": true }))
+    }
+
+    // ── ACP Skill Handlers ──────────────────────────────────
+
+    async fn handle_skill_register(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let skill: types::skill::SkillObject = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let id = self.store.register(skill).await?;
+        Ok(json!({ "id": id.0 }))
+    }
+
+    async fn handle_skill_get(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let id = params["id"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing id".into()))?;
+        let skill = self.store.get(&EntryId(id.to_string())).await?;
+        let value = serde_json::to_value(&skill)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(value)
+    }
+
+    async fn handle_skill_list(&self) -> Result<Value, AcpError> {
+        let skills = self.store.list().await?;
+        let value = serde_json::to_value(&skills)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(json!({ "skills": value, "total": skills.len() }))
+    }
+
+    async fn handle_skill_update(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let id = params["id"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing id".into()))?;
+        let skill: types::skill::SkillObject = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        self.store
+            .update(&EntryId(id.to_string()), skill)
+            .await?;
+        Ok(json!({ "updated": true }))
+    }
+
+    async fn handle_skill_export(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let id = params["id"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing id".into()))?;
+        let portable = self.store.export(&EntryId(id.to_string())).await?;
+        let value = serde_json::to_value(&portable)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(value)
+    }
+
+    async fn handle_skill_resolve(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let context: types::skill::SkillContext = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let matches = self.store.resolve(&context).await?;
+        let value = serde_json::to_value(&matches)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(json!({ "matches": value, "total": matches.len() }))
     }
 }

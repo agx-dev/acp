@@ -205,7 +205,66 @@ impl SkillRegistry for SqliteStore {
         })
     }
 
-    async fn resolve(&self, _context: &SkillContext) -> Result<Vec<SkillMatch>, AcpError> {
-        todo!()
+    async fn resolve(&self, context: &SkillContext) -> Result<Vec<SkillMatch>, AcpError> {
+        // Get all skills, then score them against the context
+        let all_skills = self.list().await?;
+        let mut matches = Vec::new();
+
+        for skill in all_skills {
+            let mut score = 0.0;
+            let mut reasons = Vec::new();
+
+            // 1. Check trigger patterns (regex match on query)
+            for pattern in &skill.trigger.patterns {
+                if let Ok(re) = regex::Regex::new(&pattern.regex) {
+                    if re.is_match(&context.query) {
+                        score += pattern.confidence_threshold;
+                        reasons.push(format!("pattern '{}' matched", pattern.regex));
+                    }
+                }
+            }
+
+            // 2. Check if skill name/description matches query (simple word matching)
+            let query_lower = context.query.to_lowercase();
+            let name_lower = skill.name.to_lowercase();
+            let desc_lower = skill.description.to_lowercase();
+            if name_lower.contains(&query_lower) || query_lower.contains(&name_lower) {
+                score += 0.5;
+                reasons.push("name match".into());
+            }
+            if desc_lower.contains(&query_lower) {
+                score += 0.3;
+                reasons.push("description match".into());
+            }
+
+            // 3. Check tool availability
+            if !skill.dependencies.tools_required.is_empty() {
+                let available = skill
+                    .dependencies
+                    .tools_required
+                    .iter()
+                    .all(|t| context.available_tools.contains(t));
+                if available {
+                    score += 0.2;
+                    reasons.push("all required tools available".into());
+                } else {
+                    score -= 0.5;
+                    reasons.push("missing required tools".into());
+                }
+            }
+
+            if score > 0.0 {
+                matches.push(SkillMatch {
+                    skill,
+                    confidence: score.min(1.0),
+                    match_reason: reasons.join("; "),
+                });
+            }
+        }
+
+        // Sort by confidence descending
+        matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(matches)
     }
 }

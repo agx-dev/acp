@@ -129,6 +129,94 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
             }
         }),
         json!({
+            "name": "acp_skill_register",
+            "description": "Register a new reusable skill/procedure in agent memory.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Skill name" },
+                    "version": { "type": "string", "description": "Semantic version (e.g. 1.0.0)", "default": "1.0.0" },
+                    "description": { "type": "string", "description": "What the skill does" },
+                    "instruction": { "type": "string", "description": "Step-by-step instruction for executing the skill" },
+                    "trigger": {
+                        "type": "object",
+                        "properties": {
+                            "patterns": { "type": "array", "items": { "type": "object" }, "description": "Trigger patterns" },
+                            "context_conditions": { "type": "array", "items": { "type": "object" } },
+                            "explicit_invocation": { "type": "boolean", "default": false }
+                        }
+                    },
+                    "dependencies": {
+                        "type": "object",
+                        "properties": {
+                            "tools_required": { "type": "array", "items": { "type": "string" } },
+                            "skills_required": { "type": "array", "items": { "type": "string" } },
+                            "min_context_window": { "type": "integer" }
+                        }
+                    }
+                },
+                "required": ["name", "description", "instruction"]
+            }
+        }),
+        json!({
+            "name": "acp_skill_get",
+            "description": "Get a skill by its ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Skill ID" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "acp_skill_list",
+            "description": "List all registered skills.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "acp_skill_update",
+            "description": "Update an existing skill.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Skill ID to update" },
+                    "name": { "type": "string" },
+                    "version": { "type": "string" },
+                    "description": { "type": "string" },
+                    "instruction": { "type": "string" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "acp_skill_export",
+            "description": "Export a skill as a portable package for sharing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Skill ID to export" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "acp_skill_resolve",
+            "description": "Find matching skills for a given context query.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Natural language query to match skills" },
+                    "available_tools": { "type": "array", "items": { "type": "string" }, "description": "Tools available in current context" },
+                    "session_tags": { "type": "array", "items": { "type": "string" }, "description": "Tags for current session" }
+                },
+                "required": ["query"]
+            }
+        }),
+        json!({
             "name": "acp_memory_prune",
             "description": "Prune old or low-importance memories according to retention policy. Removes expired episodes, low-importance semantic entries, and orphan graph nodes.",
             "inputSchema": {

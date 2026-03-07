@@ -205,14 +205,21 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = crate::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 7);
-        assert_eq!(tools[0]["name"], "acp_recall");
-        assert_eq!(tools[1]["name"], "acp_store");
-        assert_eq!(tools[2]["name"], "acp_context");
-        assert_eq!(tools[3]["name"], "acp_graph_traverse");
-        assert_eq!(tools[4]["name"], "acp_graph_remove_node");
-        assert_eq!(tools[5]["name"], "acp_graph_remove_edge");
-        assert_eq!(tools[6]["name"], "acp_memory_prune");
+        assert_eq!(tools.len(), 13);
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"acp_recall"));
+        assert!(names.contains(&"acp_store"));
+        assert!(names.contains(&"acp_context"));
+        assert!(names.contains(&"acp_graph_traverse"));
+        assert!(names.contains(&"acp_graph_remove_node"));
+        assert!(names.contains(&"acp_graph_remove_edge"));
+        assert!(names.contains(&"acp_skill_register"));
+        assert!(names.contains(&"acp_skill_get"));
+        assert!(names.contains(&"acp_skill_list"));
+        assert!(names.contains(&"acp_skill_update"));
+        assert!(names.contains(&"acp_skill_export"));
+        assert!(names.contains(&"acp_skill_resolve"));
+        assert!(names.contains(&"acp_memory_prune"));
     }
 
     // ── MCP Protocol Tests ────────────────────────────────────
@@ -252,14 +259,12 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 13);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
         assert!(names.contains(&"acp_context"));
-        assert!(names.contains(&"acp_graph_traverse"));
-        assert!(names.contains(&"acp_graph_remove_node"));
-        assert!(names.contains(&"acp_graph_remove_edge"));
+        assert!(names.contains(&"acp_skill_register"));
         assert!(names.contains(&"acp_memory_prune"));
     }
 
@@ -359,6 +364,193 @@ mod tests {
             .await;
         // Should not error — notifications are silently acknowledged
         assert!(resp.error.is_none());
+    }
+
+    // ── Skill Handler Tests ───────────────────────────────────
+
+    fn sample_skill_params() -> Value {
+        json!({
+            "id": "ignored",
+            "name": "test-skill",
+            "version": "1.0.0",
+            "description": "A test skill",
+            "instruction": "Do the thing step by step",
+            "trigger": {
+                "patterns": [],
+                "context_conditions": [],
+                "explicit_invocation": true
+            },
+            "dependencies": {
+                "tools_required": [],
+                "skills_required": [],
+                "min_context_window": null
+            },
+            "performance": {
+                "invocation_count": 0,
+                "success_rate": 0.0,
+                "avg_tokens_per_use": 0.0,
+                "avg_latency_ms": 0.0,
+                "last_used": null
+            },
+            "changelog": [],
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        })
+    }
+
+    #[tokio::test]
+    async fn test_skill_register_and_get() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Register
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.register".into(),
+                params: sample_skill_params(),
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let id = resp.result.unwrap()["id"].as_str().unwrap().to_string();
+        assert!(id.starts_with("skill-"));
+
+        // Get
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.get".into(),
+                params: json!({ "id": id }),
+                id: Some(json!(2)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["name"], "test-skill");
+        assert_eq!(result["description"], "A test skill");
+    }
+
+    #[tokio::test]
+    async fn test_skill_list() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Register two skills
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.skill.register".into(),
+            params: sample_skill_params(),
+            id: Some(json!(1)),
+        })
+        .await;
+
+        let mut params2 = sample_skill_params();
+        params2["name"] = json!("skill-two");
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.skill.register".into(),
+            params: params2,
+            id: Some(json!(2)),
+        })
+        .await;
+
+        // List
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.list".into(),
+                params: Value::Null,
+                id: Some(json!(3)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["total"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_skill_update_and_export() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Register
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.register".into(),
+                params: sample_skill_params(),
+                id: Some(json!(1)),
+            })
+            .await;
+        let id = resp.result.unwrap()["id"].as_str().unwrap().to_string();
+
+        // Update
+        let mut updated = sample_skill_params();
+        updated["id"] = json!(id);
+        updated["description"] = json!("Updated description");
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.update".into(),
+                params: updated,
+                id: Some(json!(2)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["updated"], true);
+
+        // Export
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.export".into(),
+                params: json!({ "id": id }),
+                id: Some(json!(3)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["skill"]["description"], "Updated description");
+        assert!(result["exported_at"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_skill_resolve() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Register a skill with a trigger pattern
+        let mut params = sample_skill_params();
+        params["name"] = json!("deploy-skill");
+        params["description"] = json!("Deploy application to production");
+        params["trigger"]["patterns"] = json!([
+            { "regex": "deploy|deployment", "confidence_threshold": 0.8 }
+        ]);
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.skill.register".into(),
+            params,
+            id: Some(json!(1)),
+        })
+        .await;
+
+        // Resolve with matching query
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.skill.resolve".into(),
+                params: json!({
+                    "query": "How to deploy this app?",
+                    "available_tools": [],
+                    "session_tags": []
+                }),
+                id: Some(json!(2)),
+            })
+            .await;
+
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert!(result["total"].as_u64().unwrap() >= 1);
+        let first = &result["matches"][0];
+        assert_eq!(first["skill"]["name"], "deploy-skill");
+        assert!(first["confidence"].as_f64().unwrap() > 0.0);
     }
 
     // ── Episodic Store Test ───────────────────────────────────
