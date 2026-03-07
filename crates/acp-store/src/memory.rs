@@ -136,11 +136,12 @@ impl MemoryStore for SqliteStore {
         let conn = self.conn();
         let mut report = acp_core::types::retention::PruneReport::default();
 
-        // Prune old episodes
+        // Prune old episodes (soft-delete to allow snapshot restore)
         if let Some(max_age) = policy.episodic.max_age_days {
             let deleted: usize = conn
                 .execute(
-                    "DELETE FROM episodes WHERE deleted_at IS NULL AND protected = 0
+                    "UPDATE episodes SET deleted_at = datetime('now')
+                     WHERE deleted_at IS NULL AND protected = 0
                      AND timestamp < datetime('now', ?1)",
                     params![format!("-{} days", max_age)],
                 )
@@ -148,7 +149,7 @@ impl MemoryStore for SqliteStore {
             report.episodes_pruned = deleted as u64;
         }
 
-        // Prune by max count
+        // Prune by max count (soft-delete)
         if let Some(max_eps) = policy.episodic.max_episodes {
             let count: i64 = conn
                 .query_row(
@@ -162,7 +163,8 @@ impl MemoryStore for SqliteStore {
                 let to_remove = count - max_eps as i64;
                 let deleted: usize = conn
                     .execute(
-                        "DELETE FROM episodes WHERE id IN (
+                        "UPDATE episodes SET deleted_at = datetime('now')
+                         WHERE id IN (
                             SELECT id FROM episodes WHERE deleted_at IS NULL AND protected = 0
                             ORDER BY timestamp ASC LIMIT ?1
                         )",
@@ -173,11 +175,12 @@ impl MemoryStore for SqliteStore {
             }
         }
 
-        // Prune low-importance semantic entries
+        // Prune low-importance semantic entries (soft-delete)
         if let Some(min_imp) = policy.semantic.min_importance {
             let deleted: usize = conn
                 .execute(
-                    "DELETE FROM semantic_entries WHERE deleted_at IS NULL AND protected = 0
+                    "UPDATE semantic_entries SET deleted_at = datetime('now')
+                     WHERE deleted_at IS NULL AND protected = 0
                      AND importance < ?1",
                     params![min_imp],
                 )

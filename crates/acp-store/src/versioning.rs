@@ -97,7 +97,7 @@ impl VersionManager for SqliteStore {
         let data: SnapshotData = serde_json::from_slice(&data_blob)
             .map_err(|e| AcpError::Internal(e.to_string()))?;
 
-        // Soft-delete entries not in the snapshot
+        // Restore episodes: soft-delete those not in snapshot, re-activate those in snapshot
         if !data.episode_ids.is_empty() {
             let placeholders = data.episode_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             let sql = format!(
@@ -109,6 +109,15 @@ impl VersionManager for SqliteStore {
                 data.episode_ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+            // Re-activate entries that were deleted after the snapshot
+            let sql = format!(
+                "UPDATE episodes SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND id IN ({})",
+                placeholders
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
+            stmt.execute(params.as_slice())
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
         } else {
             conn.execute(
                 "UPDATE episodes SET deleted_at = datetime('now') WHERE deleted_at IS NULL",
@@ -117,6 +126,7 @@ impl VersionManager for SqliteStore {
             .map_err(|e| AcpError::Internal(e.to_string()))?;
         }
 
+        // Restore semantic entries: soft-delete those not in snapshot, re-activate those in snapshot
         if !data.semantic_ids.is_empty() {
             let placeholders = data.semantic_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             let sql = format!(
@@ -126,6 +136,15 @@ impl VersionManager for SqliteStore {
             let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
             let params: Vec<&dyn rusqlite::types::ToSql> =
                 data.semantic_ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            stmt.execute(params.as_slice())
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+            // Re-activate entries that were deleted after the snapshot
+            let sql = format!(
+                "UPDATE semantic_entries SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND id IN ({})",
+                placeholders
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
         } else {
