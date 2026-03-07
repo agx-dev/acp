@@ -217,6 +217,73 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
             }
         }),
         json!({
+            "name": "acp_version_snapshot",
+            "description": "Create a snapshot of the current agent memory state for later restore.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "reason": { "type": "string", "description": "Why this snapshot is being taken" }
+                },
+                "required": ["reason"]
+            }
+        }),
+        json!({
+            "name": "acp_version_restore",
+            "description": "Restore agent memory to a previous snapshot. Entries not in the snapshot are soft-deleted.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "version": { "type": "string", "description": "Snapshot ID or version number to restore" }
+                },
+                "required": ["version"]
+            }
+        }),
+        json!({
+            "name": "acp_version_diff",
+            "description": "Compare two snapshots to see what changed between them.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "from": { "type": "string", "description": "Source snapshot ID or version" },
+                    "to": { "type": "string", "description": "Target snapshot ID or version" }
+                },
+                "required": ["from", "to"]
+            }
+        }),
+        json!({
+            "name": "acp_version_list",
+            "description": "List all available memory snapshots.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "acp_exchange_export",
+            "description": "Export the complete agent state (episodes, knowledge, skills, graph) as a portable bundle.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "acp_exchange_import",
+            "description": "Import an agent state bundle, merging episodes, knowledge, skills, and graph data.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "identity": { "type": "object", "description": "Agent identity" },
+                    "episodes": { "type": "array", "description": "Episodes to import" },
+                    "semantic_entries": { "type": "array", "description": "Semantic entries to import" },
+                    "nodes": { "type": "array", "description": "Graph nodes to import" },
+                    "edges": { "type": "array", "description": "Graph edges to import" },
+                    "skills": { "type": "array", "description": "Skills to import" },
+                    "snapshots": { "type": "array", "description": "Snapshots metadata" }
+                },
+                "required": ["identity"]
+            }
+        }),
+        json!({
             "name": "acp_memory_prune",
             "description": "Prune old or low-importance memories according to retention policy. Removes expired episodes, low-importance semantic entries, and orphan graph nodes.",
             "inputSchema": {

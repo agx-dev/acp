@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = crate::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 19);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
@@ -219,6 +219,12 @@ mod tests {
         assert!(names.contains(&"acp_skill_update"));
         assert!(names.contains(&"acp_skill_export"));
         assert!(names.contains(&"acp_skill_resolve"));
+        assert!(names.contains(&"acp_version_snapshot"));
+        assert!(names.contains(&"acp_version_restore"));
+        assert!(names.contains(&"acp_version_diff"));
+        assert!(names.contains(&"acp_version_list"));
+        assert!(names.contains(&"acp_exchange_export"));
+        assert!(names.contains(&"acp_exchange_import"));
         assert!(names.contains(&"acp_memory_prune"));
     }
 
@@ -259,12 +265,16 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 19);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
         assert!(names.contains(&"acp_context"));
         assert!(names.contains(&"acp_skill_register"));
+        assert!(names.contains(&"acp_version_snapshot"));
+        assert!(names.contains(&"acp_version_list"));
+        assert!(names.contains(&"acp_exchange_export"));
+        assert!(names.contains(&"acp_exchange_import"));
         assert!(names.contains(&"acp_memory_prune"));
     }
 
@@ -551,6 +561,222 @@ mod tests {
         let first = &result["matches"][0];
         assert_eq!(first["skill"]["name"], "deploy-skill");
         assert!(first["confidence"].as_f64().unwrap() > 0.0);
+    }
+
+    // ── Version Handler Tests ─────────────────────────────────
+
+    #[tokio::test]
+    async fn test_version_snapshot_and_list() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Store some data first
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({ "content": "test data" }),
+            id: Some(json!(1)),
+        })
+        .await;
+
+        // Create snapshot
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.snapshot".into(),
+                params: json!({ "reason": "before refactor", "layers": [], "tags": ["test"] }),
+                id: Some(json!(2)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert!(result["id"].as_str().unwrap().starts_with("snap-"));
+        assert_eq!(result["stats"]["semantic_count"], 1);
+
+        // List snapshots
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.list".into(),
+                params: Value::Null,
+                id: Some(json!(3)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["total"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_version_restore() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Store data and snapshot
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({ "content": "original data" }),
+            id: Some(json!(1)),
+        })
+        .await;
+
+        let snap_resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.snapshot".into(),
+                params: json!({ "reason": "checkpoint", "layers": [], "tags": [] }),
+                id: Some(json!(2)),
+            })
+            .await;
+        let snap_id = snap_resp.result.unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // Add more data
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({ "content": "new data after snapshot" }),
+            id: Some(json!(3)),
+        })
+        .await;
+
+        // Verify 2 entries
+        let stats = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.stats".into(),
+                params: Value::Null,
+                id: Some(json!(4)),
+            })
+            .await;
+        assert_eq!(stats.result.unwrap()["semantic"], 2);
+
+        // Restore
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.restore".into(),
+                params: json!({ "version": snap_id }),
+                id: Some(json!(5)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["restored"], true);
+
+        // Verify only 1 entry remains
+        let stats = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.stats".into(),
+                params: Value::Null,
+                id: Some(json!(6)),
+            })
+            .await;
+        assert_eq!(stats.result.unwrap()["semantic"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_version_diff() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Snapshot 1 — empty
+        let snap1 = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.snapshot".into(),
+                params: json!({ "reason": "empty", "layers": [], "tags": [] }),
+                id: Some(json!(1)),
+            })
+            .await;
+        let snap1_id = snap1.result.unwrap()["id"].as_str().unwrap().to_string();
+
+        // Add data
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({ "content": "new knowledge" }),
+            id: Some(json!(2)),
+        })
+        .await;
+
+        // Snapshot 2 — with data
+        let snap2 = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.snapshot".into(),
+                params: json!({ "reason": "after learning", "layers": [], "tags": [] }),
+                id: Some(json!(3)),
+            })
+            .await;
+        let snap2_id = snap2.result.unwrap()["id"].as_str().unwrap().to_string();
+
+        // Diff
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.version.diff".into(),
+                params: json!({ "from": snap1_id, "to": snap2_id }),
+                id: Some(json!(4)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["added"]["semantic_entries"], 1);
+        assert_eq!(result["removed"]["semantic_entries"], 0);
+    }
+
+    // ── Exchange Handler Tests ────────────────────────────────
+
+    #[tokio::test]
+    async fn test_exchange_export_and_import() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Store some data
+        srv.handle_request(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "acp.memory.store".into(),
+            params: json!({ "content": "export test data", "importance": 0.8 }),
+            id: Some(json!(1)),
+        })
+        .await;
+
+        // Export
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.exchange.export".into(),
+                params: Value::Null,
+                id: Some(json!(2)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let bundle = resp.result.unwrap();
+        assert_eq!(bundle["semantic_entries"].as_array().unwrap().len(), 1);
+
+        // Import into new server
+        let srv2 = AcpServer::in_memory().unwrap();
+        let resp = srv2
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.exchange.import".into(),
+                params: bundle,
+                id: Some(json!(3)),
+            })
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["imported"]["semantic"], 1);
+
+        // Verify data exists in new server
+        let stats = srv2
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.stats".into(),
+                params: Value::Null,
+                id: Some(json!(4)),
+            })
+            .await;
+        assert_eq!(stats.result.unwrap()["semantic"], 1);
     }
 
     // ── Episodic Store Test ───────────────────────────────────

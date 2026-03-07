@@ -40,6 +40,11 @@ impl GraphStore {
     pub fn edge_count(&self) -> usize {
         self.engine.read().unwrap().edge_count()
     }
+
+    /// Export the graph data (nodes + edges) for serialization.
+    pub fn engine_export(&self) -> SerializedGraph {
+        self.engine.read().unwrap().export()
+    }
 }
 
 impl Default for GraphStore {

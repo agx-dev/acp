@@ -3,10 +3,12 @@
 //! Implements `acp-core` traits using embedded SQLite.
 //! Zero external dependencies — SQLite is bundled at compile time.
 
+mod exchange;
 mod memory;
 mod schema;
 mod skills;
 mod store;
+mod versioning;
 
 pub use store::{SqliteStore, StoreConfig};
 
@@ -377,7 +379,7 @@ mod tests {
         store.register(make("skill-b")).await.unwrap();
         store.register(make("skill-a")).await.unwrap();
 
-        let all = store.list().await.unwrap();
+        let all = SkillRegistry::list(&store).await.unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].name, "skill-a"); // ORDER BY name
         assert_eq!(all[1].name, "skill-b");

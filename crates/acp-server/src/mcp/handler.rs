@@ -54,6 +54,16 @@ impl AcpServer {
             "acp.skill.export" => self.handle_skill_export(&request.params).await,
             "acp.skill.resolve" => self.handle_skill_resolve(&request.params).await,
 
+            // ── Version methods ─────────────────────────────────
+            "acp.version.snapshot" => self.handle_version_snapshot(&request.params).await,
+            "acp.version.restore" => self.handle_version_restore(&request.params).await,
+            "acp.version.diff" => self.handle_version_diff(&request.params).await,
+            "acp.version.list" => self.handle_version_list().await,
+
+            // ── Exchange methods ────────────────────────────────
+            "acp.exchange.export" => self.handle_exchange_export().await,
+            "acp.exchange.import" => self.handle_exchange_import(&request.params).await,
+
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
 
@@ -137,6 +147,12 @@ impl AcpServer {
             "acp_skill_update" => self.handle_skill_update(arguments).await,
             "acp_skill_export" => self.handle_skill_export(arguments).await,
             "acp_skill_resolve" => self.handle_skill_resolve(arguments).await,
+            "acp_version_snapshot" => self.handle_version_snapshot(arguments).await,
+            "acp_version_restore" => self.handle_version_restore(arguments).await,
+            "acp_version_diff" => self.handle_version_diff(arguments).await,
+            "acp_version_list" => self.handle_version_list().await,
+            "acp_exchange_export" => self.handle_exchange_export().await,
+            "acp_exchange_import" => self.handle_exchange_import(arguments).await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
         };
 
@@ -440,7 +456,7 @@ impl AcpServer {
     }
 
     async fn handle_skill_list(&self) -> Result<Value, AcpError> {
-        let skills = self.store.list().await?;
+        let skills = SkillRegistry::list(&self.store).await?;
         let value = serde_json::to_value(&skills)
             .map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(json!({ "skills": value, "total": skills.len() }))
@@ -468,6 +484,129 @@ impl AcpServer {
         let value = serde_json::to_value(&portable)
             .map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
+    }
+
+    // ── ACP Version Handlers ─────────────────────────────────
+
+    async fn handle_version_snapshot(&self, params: &Value) -> Result<Value, AcpError> {
+        let config: types::version::SnapshotConfig = if params.is_null() {
+            types::version::SnapshotConfig {
+                reason: "manual snapshot".into(),
+                layers: vec![],
+                tags: vec![],
+                parent: None,
+            }
+        } else {
+            serde_json::from_value(params.clone())
+                .map_err(|e| AcpError::InvalidParams(e.to_string()))?
+        };
+
+        let info = self.store.snapshot(config).await?;
+        let value =
+            serde_json::to_value(&info).map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(value)
+    }
+
+    async fn handle_version_restore(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let version = params["version"]
+            .as_str()
+            .or_else(|| params["id"].as_str())
+            .ok_or(AcpError::InvalidParams("Missing version or id".into()))?;
+
+        self.store.restore(version).await?;
+        Ok(json!({ "restored": true, "version": version }))
+    }
+
+    async fn handle_version_diff(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let from = params["from"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing from".into()))?;
+        let to = params["to"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing to".into()))?;
+
+        let diff = self.store.diff(from, to).await?;
+        let value =
+            serde_json::to_value(&diff).map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(value)
+    }
+
+    async fn handle_version_list(&self) -> Result<Value, AcpError> {
+        let snapshots = VersionManager::list(&self.store).await?;
+        let value = serde_json::to_value(&snapshots)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(json!({ "snapshots": value, "total": snapshots.len() }))
+    }
+
+    // ── ACP Exchange Handlers ────────────────────────────────
+
+    async fn handle_exchange_export(&self) -> Result<Value, AcpError> {
+        let episodes = self.store.export_all_episodes()?;
+        let semantic_entries = self.store.export_all_semantic()?;
+        let skills = SkillRegistry::list(&self.store).await?;
+        let snapshots = VersionManager::list(&self.store).await?;
+
+        // Export graph
+        let graph = self.graph.engine_export();
+        let nodes = graph.nodes;
+        let edges = graph.edges;
+
+        let bundle = AgentBundle {
+            identity: AgentIdentity::new("acp-agent", ConformanceLevel::Full),
+            episodes,
+            semantic_entries,
+            nodes,
+            edges,
+            skills,
+            snapshots,
+        };
+
+        let value =
+            serde_json::to_value(&bundle).map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(value)
+    }
+
+    async fn handle_exchange_import(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let bundle: AgentBundle = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+
+        let ep_count = self.store.import_episodes(&bundle.episodes)?;
+        let sem_count = self.store.import_semantic(&bundle.semantic_entries)?;
+
+        // Import graph nodes and edges
+        let mut node_count = 0u64;
+        let mut edge_count = 0u64;
+        for node in bundle.nodes {
+            if self.graph.add_node(node).await.is_ok() {
+                node_count += 1;
+            }
+        }
+        for edge in bundle.edges {
+            if self.graph.add_edge(edge).await.is_ok() {
+                edge_count += 1;
+            }
+        }
+
+        // Import skills
+        let mut skill_count = 0u64;
+        for skill in bundle.skills {
+            if self.store.register(skill).await.is_ok() {
+                skill_count += 1;
+            }
+        }
+
+        Ok(json!({
+            "imported": {
+                "episodes": ep_count,
+                "semantic": sem_count,
+                "nodes": node_count,
+                "edges": edge_count,
+                "skills": skill_count,
+            }
+        }))
     }
 
     async fn handle_skill_resolve(&self, params: &Value) -> Result<Value, AcpError> {
