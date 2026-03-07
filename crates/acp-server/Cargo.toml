@@ -13,7 +13,6 @@ path = "src/main.rs"
 [dependencies]
 acp-core = { path = "../acp-core" }
 acp-store = { path = "../acp-store" }
-acp-graph = { path = "../acp-graph" }
 acp-embeddings = { path = "../acp-embeddings" }
 
 tokio = { workspace = true }

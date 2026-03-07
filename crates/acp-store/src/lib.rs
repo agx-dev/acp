@@ -4,6 +4,7 @@
 //! Zero external dependencies — SQLite is bundled at compile time.
 
 mod exchange;
+mod graph;
 mod memory;
 mod schema;
 mod skills;

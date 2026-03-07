@@ -363,21 +363,21 @@ impl AcpServer {
     async fn handle_context_add_node(&self, params: Value) -> Result<Value, AcpError> {
         let node: types::graph::Node =
             serde_json::from_value(params).map_err(|e| AcpError::InvalidParams(e.to_string()))?;
-        let id = self.graph.add_node(node).await?;
+        let id = self.store.add_node(node).await?;
         Ok(json!({ "id": id.0 }))
     }
 
     async fn handle_context_add_edge(&self, params: Value) -> Result<Value, AcpError> {
         let edge: types::graph::Edge =
             serde_json::from_value(params).map_err(|e| AcpError::InvalidParams(e.to_string()))?;
-        let id = self.graph.add_edge(edge).await?;
+        let id = self.store.add_edge(edge).await?;
         Ok(json!({ "id": id.0 }))
     }
 
     async fn handle_context_query(&self, params: Value) -> Result<Value, AcpError> {
         let pattern: types::graph::GraphPattern =
             serde_json::from_value(params).map_err(|e| AcpError::InvalidParams(e.to_string()))?;
-        let nodes = self.graph.query(pattern).await?;
+        let nodes = self.store.query(pattern).await?;
         Ok(json!({ "nodes": nodes }))
     }
 
@@ -390,7 +390,7 @@ impl AcpServer {
         let max_nodes = params["max_nodes"].as_u64().unwrap_or(50) as u32;
 
         let subgraph = self
-            .graph
+            .store
             .subgraph(&EntryId(root.to_string()), depth, max_nodes)
             .await?;
 
@@ -409,7 +409,7 @@ impl AcpServer {
         let depth = params["depth"].as_u64().unwrap_or(2) as u32;
 
         let nodes = self
-            .graph
+            .store
             .traverse(&EntryId(start.to_string()), relation, depth)
             .await?;
 
@@ -421,7 +421,7 @@ impl AcpServer {
         let id = params["id"]
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
-        self.graph.remove_node(&EntryId(id.to_string())).await?;
+        self.store.remove_node(&EntryId(id.to_string())).await?;
         Ok(json!({ "removed": true }))
     }
 
@@ -430,7 +430,7 @@ impl AcpServer {
         let id = params["id"]
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
-        self.graph.remove_edge(&EntryId(id.to_string())).await?;
+        self.store.remove_edge(&EntryId(id.to_string())).await?;
         Ok(json!({ "removed": true }))
     }
 
@@ -549,7 +549,7 @@ impl AcpServer {
         let snapshots = VersionManager::list(&self.store).await?;
 
         // Export graph
-        let graph = self.graph.engine_export();
+        let graph = self.store.engine_export();
         let nodes = graph.nodes;
         let edges = graph.edges;
 
@@ -580,12 +580,12 @@ impl AcpServer {
         let mut node_count = 0u64;
         let mut edge_count = 0u64;
         for node in bundle.nodes {
-            if self.graph.add_node(node).await.is_ok() {
+            if self.store.add_node(node).await.is_ok() {
                 node_count += 1;
             }
         }
         for edge in bundle.edges {
-            if self.graph.add_edge(edge).await.is_ok() {
+            if self.store.add_edge(edge).await.is_ok() {
                 edge_count += 1;
             }
         }

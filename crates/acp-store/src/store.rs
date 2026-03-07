@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use rusqlite::Connection;
+
+use acp_graph::GraphEngine;
 
 use crate::schema;
 use crate::AcpStoreError;
@@ -23,9 +25,13 @@ impl Default for StoreConfig {
 }
 
 /// SQLite-backed storage implementing all ACP traits.
+///
+/// Includes an in-memory `GraphEngine` that is loaded from SQLite on startup
+/// and kept in sync via write-through on mutations.
 pub struct SqliteStore {
     conn: Arc<Mutex<Connection>>,
     config: StoreConfig,
+    graph: RwLock<GraphEngine>,
 }
 
 impl SqliteStore {
@@ -35,8 +41,10 @@ impl SqliteStore {
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
             config,
+            graph: RwLock::new(GraphEngine::new()),
         };
         store.initialize()?;
+        store.load_graph()?;
         Ok(store)
     }
 
@@ -50,6 +58,7 @@ impl SqliteStore {
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
             config,
+            graph: RwLock::new(GraphEngine::new()),
         };
         store.initialize()?;
         Ok(store)
@@ -86,5 +95,19 @@ impl SqliteStore {
     /// Get a reference to the connection (internal use).
     pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap()
+    }
+
+    /// Get a read lock on the graph engine.
+    pub(crate) fn graph_read(
+        &self,
+    ) -> std::sync::RwLockReadGuard<'_, GraphEngine> {
+        self.graph.read().unwrap()
+    }
+
+    /// Get a write lock on the graph engine.
+    pub(crate) fn graph_write(
+        &self,
+    ) -> std::sync::RwLockWriteGuard<'_, GraphEngine> {
+        self.graph.write().unwrap()
     }
 }
