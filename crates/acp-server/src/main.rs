@@ -1,9 +1,8 @@
 mod cli;
-mod mcp;
-mod server;
 mod transport;
 
 use acp_core::MemoryStore;
+use acp_server::{AcpServer, ServerConfig};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
@@ -29,7 +28,7 @@ async fn main() {
 }
 
 async fn run(args: cli::Cli) -> Result<(), acp_core::AcpError> {
-    let config = server::ServerConfig {
+    let config = ServerConfig {
         storage_path: args.storage,
         embedding_provider: args.embedding_provider,
         openai_api_key: args.openai_api_key,
@@ -38,11 +37,11 @@ async fn run(args: cli::Cli) -> Result<(), acp_core::AcpError> {
 
     match args.command {
         None | Some(cli::Commands::Serve) => {
-            let srv = server::AcpServer::with_config(config)?;
+            let srv = AcpServer::with_config(config)?;
             transport::stdio::serve_stdio(&srv).await?;
         }
         Some(cli::Commands::Stats) => {
-            let srv = server::AcpServer::with_config(config)?;
+            let srv = AcpServer::with_config(config)?;
             let stats = srv
                 .store
                 .stats(&[
@@ -65,7 +64,7 @@ mod tests {
     use acp_core::*;
     use serde_json::{json, Value};
 
-    use crate::server::AcpServer;
+    use acp_server::AcpServer;
 
     #[tokio::test]
     async fn test_ping() {
@@ -211,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_mcp_tools_definitions() {
-        let tools = crate::mcp::tools::mcp_tools();
+        let tools = acp_server::mcp::tools::mcp_tools();
         assert_eq!(tools.len(), 19);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));

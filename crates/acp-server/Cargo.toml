@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "ACP Server — assembles all components and exposes ACP via MCP (JSON-RPC stdio)"
 
+[lib]
+name = "acp_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "acp-server"
 path = "src/main.rs"
@@ -29,3 +33,4 @@ clap = { version = "4", features = ["derive", "env"] }
 
 [dev-dependencies]
 tokio = { workspace = true }
+tempfile = "3"

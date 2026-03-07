@@ -9,9 +9,9 @@ use acp_store::SqliteStore;
 /// The `SqliteStore` handles both memory storage AND graph persistence
 /// (via `ContextGraphStore` trait), so no separate graph field is needed.
 pub struct AcpServer {
-    pub(crate) store: SqliteStore,
+    pub store: SqliteStore,
     #[allow(dead_code)]
-    pub(crate) embeddings: Box<dyn EmbeddingProvider>,
+    embeddings: Box<dyn EmbeddingProvider>,
 }
 
 /// Configuration for creating an AcpServer with a specific embedding provider.

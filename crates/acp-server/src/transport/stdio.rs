@@ -1,7 +1,7 @@
 use acp_core::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::server::AcpServer;
+use acp_server::AcpServer;
 
 /// Serve ACP over stdin/stdout (standard MCP transport).
 pub async fn serve_stdio(server: &AcpServer) -> Result<(), AcpError> {
