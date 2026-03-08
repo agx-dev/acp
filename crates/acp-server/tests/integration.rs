@@ -49,15 +49,11 @@ mod helpers {
 
         pub async fn tool_call(&self, tool: &str, args: Value) -> Value {
             let result = self
-                .call(
-                    "tools/call",
-                    json!({ "name": tool, "arguments": args }),
-                )
+                .call("tools/call", json!({ "name": tool, "arguments": args }))
                 .await;
             let text = result["content"][0]["text"].as_str().unwrap();
             assert!(
-                result.get("isError").is_none()
-                    || result["isError"] == false,
+                result.get("isError").is_none() || result["isError"] == false,
                 "Tool error: {}",
                 text,
             );
@@ -430,15 +426,11 @@ async fn test_skill_full_lifecycle() {
     });
 
     // Register
-    let registered = srv
-        .call("acp.skill.register", skill_params.clone())
-        .await;
+    let registered = srv.call("acp.skill.register", skill_params.clone()).await;
     let skill_id = registered["id"].as_str().unwrap().to_string();
 
     // Get
-    let skill = srv
-        .call("acp.skill.get", json!({ "id": skill_id }))
-        .await;
+    let skill = srv.call("acp.skill.get", json!({ "id": skill_id })).await;
     assert_eq!(skill["name"], "deploy-prod");
     assert_eq!(skill["dependencies"]["tools_required"][0], "bash");
 
@@ -453,11 +445,12 @@ async fn test_skill_full_lifecycle() {
     updated["description"] = json!("Deploy to production with zero downtime");
     srv.call("acp.skill.update", updated).await;
 
-    let skill = srv
-        .call("acp.skill.get", json!({ "id": skill_id }))
-        .await;
+    let skill = srv.call("acp.skill.get", json!({ "id": skill_id })).await;
     assert_eq!(skill["version"], "2.0.0");
-    assert_eq!(skill["description"], "Deploy to production with zero downtime");
+    assert_eq!(
+        skill["description"],
+        "Deploy to production with zero downtime"
+    );
 
     // Resolve
     let matches = srv

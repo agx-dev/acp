@@ -99,7 +99,11 @@ impl EmbeddingProvider for OpenAIEmbeddings {
         body["data"][0]["embedding"]
             .as_array()
             .ok_or_else(|| AcpError::Internal("Invalid embedding response".into()))
-            .map(|arr| arr.iter().map(|v| v.as_f64().unwrap_or(0.0) as f32).collect())
+            .map(|arr| {
+                arr.iter()
+                    .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+                    .collect()
+            })
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, AcpError> {

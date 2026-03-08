@@ -167,9 +167,10 @@ impl SqliteStore {
     fn persist_node(&self, node: &Node) -> Result<(), AcpError> {
         let conn = self.conn();
 
-        let embedding_blob: Option<Vec<u8>> = node.embedding.as_ref().map(|emb| {
-            emb.iter().flat_map(|f| f.to_le_bytes()).collect()
-        });
+        let embedding_blob: Option<Vec<u8>> = node
+            .embedding
+            .as_ref()
+            .map(|emb| emb.iter().flat_map(|f| f.to_le_bytes()).collect());
 
         let node_type_sql = enum_to_sql(&node.node_type)?;
 
@@ -350,10 +351,7 @@ mod tests {
 
         store.add_node(test_node("n1", "Task A")).await.unwrap();
         store.add_node(test_node("n2", "Task B")).await.unwrap();
-        store
-            .add_edge(test_edge("e1", "n1", "n2"))
-            .await
-            .unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
 
         // Verify in-memory engine
         assert_eq!(store.graph_node_count(), 2);
@@ -377,15 +375,9 @@ mod tests {
 
         store.add_node(test_node("n1", "A")).await.unwrap();
         store.add_node(test_node("n2", "B")).await.unwrap();
-        store
-            .add_edge(test_edge("e1", "n1", "n2"))
-            .await
-            .unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
 
-        store
-            .remove_node(&EntryId("n1".to_string()))
-            .await
-            .unwrap();
+        store.remove_node(&EntryId("n1".to_string())).await.unwrap();
 
         assert_eq!(store.graph_node_count(), 1);
 
@@ -408,10 +400,7 @@ mod tests {
 
         store.add_node(test_node("n1", "Root")).await.unwrap();
         store.add_node(test_node("n2", "Child")).await.unwrap();
-        store
-            .add_edge(test_edge("e1", "n1", "n2"))
-            .await
-            .unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
 
         let nodes = store
             .traverse(&EntryId("n1".to_string()), Relation::LedTo, 2)
@@ -468,10 +457,7 @@ mod tests {
 
         store.add_node(test_node("n1", "A")).await.unwrap();
         store.add_node(test_node("n2", "B")).await.unwrap();
-        store
-            .add_edge(test_edge("e1", "n1", "n2"))
-            .await
-            .unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
 
         let exported = store.engine_export();
         assert_eq!(exported.metadata.node_count, 2);

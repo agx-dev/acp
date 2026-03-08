@@ -31,8 +31,10 @@ impl VersionManager for SqliteStore {
 
         // Collect current state IDs
         let episode_ids = collect_ids(&conn, "SELECT id FROM episodes WHERE deleted_at IS NULL")?;
-        let semantic_ids =
-            collect_ids(&conn, "SELECT id FROM semantic_entries WHERE deleted_at IS NULL")?;
+        let semantic_ids = collect_ids(
+            &conn,
+            "SELECT id FROM semantic_entries WHERE deleted_at IS NULL",
+        )?;
         let skill_ids = collect_ids(&conn, "SELECT id FROM skills")?;
 
         let data = SnapshotData {
@@ -94,19 +96,29 @@ impl VersionManager for SqliteStore {
                 other => AcpError::Internal(other.to_string()),
             })?;
 
-        let data: SnapshotData = serde_json::from_slice(&data_blob)
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        let data: SnapshotData =
+            serde_json::from_slice(&data_blob).map_err(|e| AcpError::Internal(e.to_string()))?;
 
         // Restore episodes: soft-delete those not in snapshot, re-activate those in snapshot
         if !data.episode_ids.is_empty() {
-            let placeholders = data.episode_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let placeholders = data
+                .episode_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
             let sql = format!(
                 "UPDATE episodes SET deleted_at = datetime('now') WHERE deleted_at IS NULL AND id NOT IN ({})",
                 placeholders
             );
-            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
-            let params: Vec<&dyn rusqlite::types::ToSql> =
-                data.episode_ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = data
+                .episode_ids
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
 
@@ -115,7 +127,9 @@ impl VersionManager for SqliteStore {
                 "UPDATE episodes SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND id IN ({})",
                 placeholders
             );
-            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
         } else {
@@ -128,14 +142,24 @@ impl VersionManager for SqliteStore {
 
         // Restore semantic entries: soft-delete those not in snapshot, re-activate those in snapshot
         if !data.semantic_ids.is_empty() {
-            let placeholders = data.semantic_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let placeholders = data
+                .semantic_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
             let sql = format!(
                 "UPDATE semantic_entries SET deleted_at = datetime('now') WHERE deleted_at IS NULL AND id NOT IN ({})",
                 placeholders
             );
-            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
-            let params: Vec<&dyn rusqlite::types::ToSql> =
-                data.semantic_ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = data
+                .semantic_ids
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
 
@@ -144,7 +168,9 @@ impl VersionManager for SqliteStore {
                 "UPDATE semantic_entries SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND id IN ({})",
                 placeholders
             );
-            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
         } else {
@@ -157,11 +183,21 @@ impl VersionManager for SqliteStore {
 
         // Skills don't have soft-delete, so delete those not in snapshot
         if !data.skill_ids.is_empty() {
-            let placeholders = data.skill_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let placeholders = data
+                .skill_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
             let sql = format!("DELETE FROM skills WHERE id NOT IN ({})", placeholders);
-            let mut stmt = conn.prepare(&sql).map_err(|e| AcpError::Internal(e.to_string()))?;
-            let params: Vec<&dyn rusqlite::types::ToSql> =
-                data.skill_ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = data
+                .skill_ids
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
             stmt.execute(params.as_slice())
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
         } else {
@@ -194,19 +230,17 @@ impl VersionManager for SqliteStore {
         let from_data = load_snapshot(from)?;
         let to_data = load_snapshot(to)?;
 
-        let diff_count =
-            |from_ids: &[String], to_ids: &[String]| -> (u64, u64) {
-                use std::collections::HashSet;
-                let from_set: HashSet<&str> = from_ids.iter().map(|s| s.as_str()).collect();
-                let to_set: HashSet<&str> = to_ids.iter().map(|s| s.as_str()).collect();
-                let added = to_set.difference(&from_set).count() as u64;
-                let removed = from_set.difference(&to_set).count() as u64;
-                (added, removed)
-            };
+        let diff_count = |from_ids: &[String], to_ids: &[String]| -> (u64, u64) {
+            use std::collections::HashSet;
+            let from_set: HashSet<&str> = from_ids.iter().map(|s| s.as_str()).collect();
+            let to_set: HashSet<&str> = to_ids.iter().map(|s| s.as_str()).collect();
+            let added = to_set.difference(&from_set).count() as u64;
+            let removed = from_set.difference(&to_set).count() as u64;
+            (added, removed)
+        };
 
         let (ep_added, ep_removed) = diff_count(&from_data.episode_ids, &to_data.episode_ids);
-        let (sem_added, sem_removed) =
-            diff_count(&from_data.semantic_ids, &to_data.semantic_ids);
+        let (sem_added, sem_removed) = diff_count(&from_data.semantic_ids, &to_data.semantic_ids);
         let (sk_added, sk_removed) = diff_count(&from_data.skill_ids, &to_data.skill_ids);
 
         Ok(VersionDiff {
@@ -284,7 +318,9 @@ impl VersionManager for SqliteStore {
 }
 
 fn collect_ids(conn: &rusqlite::Connection, sql: &str) -> Result<Vec<String>, AcpError> {
-    let mut stmt = conn.prepare(sql).map_err(|e| AcpError::Internal(e.to_string()))?;
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|e| AcpError::Internal(e.to_string()))?;
     let rows = stmt
         .query_map([], |row| row.get(0))
         .map_err(|e| AcpError::Internal(e.to_string()))?;

@@ -299,8 +299,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_register_and_get() {
-        use acp_core::SkillRegistry;
         use acp_core::types::skill::*;
+        use acp_core::SkillRegistry;
 
         let store = SqliteStore::in_memory().unwrap();
         let skill = SkillObject {
@@ -345,8 +345,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_list() {
-        use acp_core::SkillRegistry;
         use acp_core::types::skill::*;
+        use acp_core::SkillRegistry;
 
         let store = SqliteStore::in_memory().unwrap();
         let make = |name: &str| SkillObject {
@@ -388,8 +388,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_update() {
-        use acp_core::SkillRegistry;
         use acp_core::types::skill::*;
+        use acp_core::SkillRegistry;
 
         let store = SqliteStore::in_memory().unwrap();
         let skill = SkillObject {
@@ -436,8 +436,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_export() {
-        use acp_core::SkillRegistry;
         use acp_core::types::skill::*;
+        use acp_core::SkillRegistry;
 
         let store = SqliteStore::in_memory().unwrap();
         let skill = SkillObject {

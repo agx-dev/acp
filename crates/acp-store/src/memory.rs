@@ -59,7 +59,11 @@ impl MemoryStore for SqliteStore {
             }
         }
 
-        entries.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        entries.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let top_k = query.top_k.unwrap_or(10);
         entries.truncate(top_k);
 
@@ -209,7 +213,12 @@ impl MemoryStore for SqliteStore {
         let mut stats = MemoryStats::default();
 
         let layers = if layers.is_empty() {
-            vec![Layer::Episodic, Layer::Semantic, Layer::Procedural, Layer::Graph]
+            vec![
+                Layer::Episodic,
+                Layer::Semantic,
+                Layer::Procedural,
+                Layer::Graph,
+            ]
         } else {
             layers.to_vec()
         };
@@ -304,9 +313,7 @@ impl SqliteStore {
                 ep.context.conversation_id,
                 ep.context.parent_episode.as_ref().map(|e| &e.0),
                 ep.context.graph_ref,
-                ep.outcome
-                    .as_ref()
-                    .map(|o| enum_to_sql(&o.status).unwrap()),
+                ep.outcome.as_ref().map(|o| enum_to_sql(&o.status).unwrap()),
                 ep.outcome
                     .as_ref()
                     .and_then(|o| o.confidence.map(|c| c.value())),
@@ -331,11 +338,10 @@ impl SqliteStore {
         let id = EntryId::new("sem");
         let conn = self.conn();
 
-        let embedding_blob: Option<Vec<u8>> = se.embedding.as_ref().map(|emb| {
-            emb.iter()
-                .flat_map(|f| f.to_le_bytes())
-                .collect()
-        });
+        let embedding_blob: Option<Vec<u8>> = se
+            .embedding
+            .as_ref()
+            .map(|emb| emb.iter().flat_map(|f| f.to_le_bytes()).collect());
 
         conn.execute(
             "INSERT INTO semantic_entries (
@@ -358,8 +364,7 @@ impl SqliteStore {
                 se.decay_rate,
                 se.access_count,
                 se.last_accessed.map(|dt| dt.to_rfc3339()),
-                serde_json::to_string(&se.tags)
-                    .map_err(|e| AcpError::Internal(e.to_string()))?,
+                serde_json::to_string(&se.tags).map_err(|e| AcpError::Internal(e.to_string()))?,
                 se.category,
                 se.domain,
                 se.protected,
@@ -367,7 +372,9 @@ impl SqliteStore {
                     .as_ref()
                     .map(|p| serde_json::to_string(&p.source_episodes).unwrap())
                     .unwrap_or_else(|| "[]".to_string()),
-                se.provenance.as_ref().and_then(|p| p.consolidation_id.clone()),
+                se.provenance
+                    .as_ref()
+                    .and_then(|p| p.consolidation_id.clone()),
                 se.provenance.as_ref().map(|p| p.verified).unwrap_or(false),
                 se.provenance
                     .as_ref()
@@ -453,7 +460,9 @@ impl SqliteStore {
         };
 
         let top_k = query.top_k.unwrap_or(10) as i64;
-        let mut stmt = conn.prepare(sql).map_err(|e| AcpError::Internal(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
 
         let rows = if let Some(ref text) = text_param {
             stmt.query_map(params![text, top_k], map_episode_row)
@@ -492,7 +501,9 @@ impl SqliteStore {
         };
 
         let top_k = query.top_k.unwrap_or(10) as i64;
-        let mut stmt = conn.prepare(sql).map_err(|e| AcpError::Internal(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
 
         let rows = if let Some(ref text) = text_param {
             stmt.query_map(params![text, top_k], map_semantic_row)

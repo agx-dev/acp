@@ -53,9 +53,7 @@ impl EmbeddingCache {
                 }
             }
 
-            cache
-                .entries
-                .insert(key.clone(), CacheEntry { embedding });
+            cache.entries.insert(key.clone(), CacheEntry { embedding });
             cache.order.push(key);
         }
     }

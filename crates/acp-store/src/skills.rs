@@ -42,11 +42,7 @@ fn row_to_skill(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillObject> {
 
     // Parse version
     let version = semver::Version::parse(&version_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            2,
-            rusqlite::types::Type::Text,
-            Box::new(e),
-        )
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
     })?;
 
     // Parse JSON columns
@@ -58,8 +54,7 @@ fn row_to_skill(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillObject> {
         serde_json::from_str(&tools_required_json).unwrap_or_default();
     let skills_required: Vec<String> =
         serde_json::from_str(&skills_required_json).unwrap_or_default();
-    let changelog: Vec<ChangelogEntry> =
-        serde_json::from_str(&changelog_json).unwrap_or_default();
+    let changelog: Vec<ChangelogEntry> = serde_json::from_str(&changelog_json).unwrap_or_default();
 
     // Parse timestamps
     let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
@@ -263,7 +258,11 @@ impl SkillRegistry for SqliteStore {
         }
 
         // Sort by confidence descending
-        matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(matches)
     }

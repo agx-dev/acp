@@ -98,16 +98,12 @@ impl SqliteStore {
     }
 
     /// Get a read lock on the graph engine.
-    pub(crate) fn graph_read(
-        &self,
-    ) -> std::sync::RwLockReadGuard<'_, GraphEngine> {
+    pub(crate) fn graph_read(&self) -> std::sync::RwLockReadGuard<'_, GraphEngine> {
         self.graph.read().unwrap()
     }
 
     /// Get a write lock on the graph engine.
-    pub(crate) fn graph_write(
-        &self,
-    ) -> std::sync::RwLockWriteGuard<'_, GraphEngine> {
+    pub(crate) fn graph_write(&self) -> std::sync::RwLockWriteGuard<'_, GraphEngine> {
         self.graph.write().unwrap()
     }
 }

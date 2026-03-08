@@ -57,8 +57,7 @@ async fn write_response(
     stdout: &mut tokio::io::Stdout,
     response: &JsonRpcResponse,
 ) -> Result<(), AcpError> {
-    let json =
-        serde_json::to_string(response).map_err(|e| AcpError::Internal(e.to_string()))?;
+    let json = serde_json::to_string(response).map_err(|e| AcpError::Internal(e.to_string()))?;
     stdout
         .write_all(json.as_bytes())
         .await
