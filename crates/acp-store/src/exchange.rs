@@ -96,7 +96,11 @@ impl SqliteStore {
                         trigger: None,
                         tags,
                         model_used: row.get(21).ok().flatten(),
-                        latency_ms: row.get::<_, Option<i64>>(22).ok().flatten().map(|v| v as u64),
+                        latency_ms: row
+                            .get::<_, Option<i64>>(22)
+                            .ok()
+                            .flatten()
+                            .map(|v| v as u64),
                     },
                 })
             })
@@ -151,13 +155,11 @@ impl SqliteStore {
                     importance: row.get(4)?,
                     decay_rate: row.get(5)?,
                     access_count: row.get::<_, i64>(6)? as u64,
-                    last_accessed: row
-                        .get::<_, Option<String>>(7)?
-                        .and_then(|s| {
-                            chrono::DateTime::parse_from_rfc3339(&s)
-                                .map(|dt| dt.with_timezone(&chrono::Utc))
-                                .ok()
-                        }),
+                    last_accessed: row.get::<_, Option<String>>(7)?.and_then(|s| {
+                        chrono::DateTime::parse_from_rfc3339(&s)
+                            .map(|dt| dt.with_timezone(&chrono::Utc))
+                            .ok()
+                    }),
                     tags,
                     category: row.get(9)?,
                     domain: row.get(10)?,
@@ -187,11 +189,11 @@ impl SqliteStore {
                     ep.id.0,
                     ep.seq_num as i64,
                     ep.timestamp.to_rfc3339(),
-                    serde_json::to_value(&ep.episode_type)
+                    serde_json::to_value(ep.episode_type)
                         .ok()
                         .and_then(|v| v.as_str().map(String::from))
                         .unwrap_or_else(|| "system".into()),
-                    serde_json::to_value(&ep.content.role)
+                    serde_json::to_value(ep.content.role)
                         .ok()
                         .and_then(|v| v.as_str().map(String::from))
                         .unwrap_or_else(|| "agent".into()),
@@ -222,7 +224,7 @@ impl SqliteStore {
                 params![
                     se.id.0,
                     se.content,
-                    serde_json::to_value(&se.source)
+                    serde_json::to_value(se.source)
                         .ok()
                         .and_then(|v| v.as_str().map(String::from))
                         .unwrap_or_else(|| "manual".into()),

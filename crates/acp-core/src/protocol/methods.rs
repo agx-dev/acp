@@ -40,7 +40,7 @@ pub enum AcpMethod {
 
 impl AcpMethod {
     /// Parse a method string into an AcpMethod.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "acp.memory.store" => Some(Self::MemoryStore),
             "acp.memory.recall" => Some(Self::MemoryRecall),
@@ -157,12 +157,12 @@ mod tests {
     fn roundtrip_method() {
         let method = AcpMethod::MemoryRecall;
         let s = method.as_str();
-        let parsed = AcpMethod::from_str(s).unwrap();
+        let parsed = AcpMethod::parse(s).unwrap();
         assert_eq!(method, parsed);
     }
 
     #[test]
     fn unknown_method_returns_none() {
-        assert!(AcpMethod::from_str("acp.foo.bar").is_none());
+        assert!(AcpMethod::parse("acp.foo.bar").is_none());
     }
 }

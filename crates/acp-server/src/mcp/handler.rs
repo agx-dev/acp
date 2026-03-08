@@ -237,7 +237,7 @@ impl AcpServer {
                 };
                 (Layer::Episodic, StoreEntry::Episode(ep))
             }
-            "semantic" | _ => {
+            _ => {
                 let entry = SemanticEntry {
                     id: EntryId::new("sem"),
                     content: content.to_string(),
@@ -402,10 +402,9 @@ impl AcpServer {
         let start = params["start"]
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing start".into()))?;
-        let relation: types::graph::Relation = serde_json::from_value(
-            params["relation"].clone(),
-        )
-        .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let relation: types::graph::Relation =
+            serde_json::from_value(params["relation"].clone())
+                .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
         let depth = params["depth"].as_u64().unwrap_or(2) as u32;
 
         let nodes = self
@@ -450,15 +449,13 @@ impl AcpServer {
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
         let skill = self.store.get(&EntryId(id.to_string())).await?;
-        let value = serde_json::to_value(&skill)
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value = serde_json::to_value(&skill).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
     }
 
     async fn handle_skill_list(&self) -> Result<Value, AcpError> {
         let skills = SkillRegistry::list(&self.store).await?;
-        let value = serde_json::to_value(&skills)
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value = serde_json::to_value(&skills).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(json!({ "skills": value, "total": skills.len() }))
     }
 
@@ -469,9 +466,7 @@ impl AcpServer {
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
         let skill: types::skill::SkillObject = serde_json::from_value(params.clone())
             .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
-        self.store
-            .update(&EntryId(id.to_string()), skill)
-            .await?;
+        self.store.update(&EntryId(id.to_string()), skill).await?;
         Ok(json!({ "updated": true }))
     }
 
@@ -481,8 +476,8 @@ impl AcpServer {
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
         let portable = self.store.export(&EntryId(id.to_string())).await?;
-        let value = serde_json::to_value(&portable)
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value =
+            serde_json::to_value(&portable).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
     }
 
@@ -502,8 +497,7 @@ impl AcpServer {
         };
 
         let info = self.store.snapshot(config).await?;
-        let value =
-            serde_json::to_value(&info).map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value = serde_json::to_value(&info).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
     }
 
@@ -528,15 +522,14 @@ impl AcpServer {
             .ok_or(AcpError::InvalidParams("Missing to".into()))?;
 
         let diff = self.store.diff(from, to).await?;
-        let value =
-            serde_json::to_value(&diff).map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value = serde_json::to_value(&diff).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
     }
 
     async fn handle_version_list(&self) -> Result<Value, AcpError> {
         let snapshots = VersionManager::list(&self.store).await?;
-        let value = serde_json::to_value(&snapshots)
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value =
+            serde_json::to_value(&snapshots).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(json!({ "snapshots": value, "total": snapshots.len() }))
     }
 
@@ -563,8 +556,7 @@ impl AcpServer {
             snapshots,
         };
 
-        let value =
-            serde_json::to_value(&bundle).map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value = serde_json::to_value(&bundle).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
     }
 
@@ -614,8 +606,8 @@ impl AcpServer {
         let context: types::skill::SkillContext = serde_json::from_value(params.clone())
             .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
         let matches = self.store.resolve(&context).await?;
-        let value = serde_json::to_value(&matches)
-            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        let value =
+            serde_json::to_value(&matches).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(json!({ "matches": value, "total": matches.len() }))
     }
 }

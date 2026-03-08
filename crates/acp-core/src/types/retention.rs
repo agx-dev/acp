@@ -1,21 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Retention policy for memory management.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RetentionPolicy {
     pub episodic: EpisodicRetention,
     pub semantic: SemanticRetention,
     pub graph: GraphRetention,
-}
-
-impl Default for RetentionPolicy {
-    fn default() -> Self {
-        Self {
-            episodic: EpisodicRetention::default(),
-            semantic: SemanticRetention::default(),
-            graph: GraphRetention::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,7 +6,9 @@
 
 mod engine;
 
-pub use engine::{GraphEngine, GraphMetadata, MergeConflict, MergeResult, MergeStrategy, SerializedGraph};
+pub use engine::{
+    GraphEngine, GraphMetadata, MergeConflict, MergeResult, MergeStrategy, SerializedGraph,
+};
 
 use std::sync::RwLock;
 
@@ -261,8 +263,12 @@ mod tests {
         let mut g1 = sample_graph();
         let mut g2 = GraphEngine::new();
 
-        g2.add_node(make_node("knowledge-1", NodeType::Knowledge, "JWT best practices"))
-            .unwrap();
+        g2.add_node(make_node(
+            "knowledge-1",
+            NodeType::Knowledge,
+            "JWT best practices",
+        ))
+        .unwrap();
 
         let result = g1.merge(&g2, MergeStrategy::RemoteWins).unwrap();
         assert_eq!(result.nodes_added, 1);

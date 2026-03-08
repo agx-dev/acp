@@ -23,6 +23,12 @@ pub struct GraphEngine {
     relation_index: HashMap<Relation, Vec<String>>,
 }
 
+impl Default for GraphEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GraphEngine {
     pub fn new() -> Self {
         Self {
@@ -74,10 +80,10 @@ impl GraphEngine {
             return Err(AcpError::EntryNotFound(edge.target.0.clone()));
         }
 
-        if matches!(edge.relation, Relation::DependsOn | Relation::BlockedBy) {
-            if self.would_create_cycle(&edge.source.0, &edge.target.0) {
-                return Err(AcpError::GraphCycle);
-            }
+        if matches!(edge.relation, Relation::DependsOn | Relation::BlockedBy)
+            && self.would_create_cycle(&edge.source.0, &edge.target.0)
+        {
+            return Err(AcpError::GraphCycle);
         }
 
         let id = edge.id.0.clone();
@@ -245,12 +251,7 @@ impl GraphEngine {
 
     // ── Subgraph ─────────────────────────────────────────────
 
-    pub fn subgraph(
-        &self,
-        root: &str,
-        depth: u32,
-        max_nodes: u32,
-    ) -> Result<SubGraph, AcpError> {
+    pub fn subgraph(&self, root: &str, depth: u32, max_nodes: u32) -> Result<SubGraph, AcpError> {
         if !self.nodes.contains_key(root) {
             return Err(AcpError::EntryNotFound(root.to_string()));
         }
@@ -425,13 +426,11 @@ impl GraphEngine {
     }
 
     pub fn to_json(&self) -> Result<String, AcpError> {
-        serde_json::to_string_pretty(&self.export())
-            .map_err(|e| AcpError::Serialization(e))
+        serde_json::to_string_pretty(&self.export()).map_err(AcpError::Serialization)
     }
 
     pub fn from_json(json: &str) -> Result<Self, AcpError> {
-        let data: SerializedGraph =
-            serde_json::from_str(json).map_err(|e| AcpError::Serialization(e))?;
+        let data: SerializedGraph = serde_json::from_str(json).map_err(AcpError::Serialization)?;
         Self::import(&data)
     }
 
@@ -449,9 +448,7 @@ impl GraphEngine {
         }
 
         if let Some(ref props) = pattern.properties {
-            results.retain(|n| {
-                props.iter().all(|(k, v)| n.properties.get(k) == Some(v))
-            });
+            results.retain(|n| props.iter().all(|(k, v)| n.properties.get(k) == Some(v)));
         }
 
         if let Some(max) = pattern.max_results {
@@ -554,13 +551,12 @@ impl GraphEngine {
         }
 
         for (id, remote_edge) in &other.edges {
-            if !self.edges.contains_key(id) {
-                if self.nodes.contains_key(&remote_edge.source.0)
-                    && self.nodes.contains_key(&remote_edge.target.0)
-                {
-                    self.add_edge(remote_edge.clone())?;
-                    result.edges_added += 1;
-                }
+            if !self.edges.contains_key(id)
+                && self.nodes.contains_key(&remote_edge.source.0)
+                && self.nodes.contains_key(&remote_edge.target.0)
+            {
+                self.add_edge(remote_edge.clone())?;
+                result.edges_added += 1;
             }
         }
 
