@@ -910,7 +910,7 @@ mod tests {
         // Add nodes
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addNode".into(),
+            method: "acp.graph.add_node".into(),
             params: json!({
                 "id": "t1", "node_type": "task", "label": "Auth",
                 "properties": {}, "episode_refs": [], "semantic_refs": [],
@@ -921,7 +921,7 @@ mod tests {
         .await;
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addNode".into(),
+            method: "acp.graph.add_node".into(),
             params: json!({
                 "id": "t2", "node_type": "tool", "label": "JWT",
                 "properties": {}, "episode_refs": [], "semantic_refs": [],
@@ -934,7 +934,7 @@ mod tests {
         // Add edge
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addEdge".into(),
+            method: "acp.graph.add_edge".into(),
             params: json!({
                 "id": "e1", "source": "t1", "target": "t2",
                 "relation": "used_for", "weight": 1.0,
@@ -971,7 +971,7 @@ mod tests {
 
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addNode".into(),
+            method: "acp.graph.add_node".into(),
             params: json!({
                 "id": "n1", "node_type": "task", "label": "Task",
                 "properties": {}, "episode_refs": [], "semantic_refs": [],
@@ -984,7 +984,7 @@ mod tests {
         let resp = srv
             .handle_request(JsonRpcRequest {
                 jsonrpc: "2.0".into(),
-                method: "acp.graph.removeNode".into(),
+                method: "acp.graph.remove_node".into(),
                 params: json!({ "id": "n1" }),
                 id: Some(json!(2)),
             })
@@ -1000,7 +1000,7 @@ mod tests {
 
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addNode".into(),
+            method: "acp.graph.add_node".into(),
             params: json!({
                 "id": "a", "node_type": "task", "label": "A",
                 "properties": {}, "episode_refs": [], "semantic_refs": [],
@@ -1011,7 +1011,7 @@ mod tests {
         .await;
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addNode".into(),
+            method: "acp.graph.add_node".into(),
             params: json!({
                 "id": "b", "node_type": "result", "label": "B",
                 "properties": {}, "episode_refs": [], "semantic_refs": [],
@@ -1022,7 +1022,7 @@ mod tests {
         .await;
         srv.handle_request(JsonRpcRequest {
             jsonrpc: "2.0".into(),
-            method: "acp.context.addEdge".into(),
+            method: "acp.graph.add_edge".into(),
             params: json!({
                 "id": "e1", "source": "a", "target": "b",
                 "relation": "led_to", "weight": 1.0,
@@ -1035,7 +1035,7 @@ mod tests {
         let resp = srv
             .handle_request(JsonRpcRequest {
                 jsonrpc: "2.0".into(),
-                method: "acp.graph.removeEdge".into(),
+                method: "acp.graph.remove_edge".into(),
                 params: json!({ "id": "e1" }),
                 id: Some(json!(4)),
             })

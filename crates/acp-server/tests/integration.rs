@@ -47,6 +47,17 @@ mod helpers {
             resp.result.unwrap()
         }
 
+        pub async fn call_raw(&self, method: &str, params: Value) -> JsonRpcResponse {
+            self.inner
+                .handle_request(JsonRpcRequest {
+                    jsonrpc: "2.0".into(),
+                    method: method.into(),
+                    params,
+                    id: Some(json!(1)),
+                })
+                .await
+        }
+
         pub async fn tool_call(&self, tool: &str, args: Value) -> Value {
             let result = self
                 .call("tools/call", json!({ "name": tool, "arguments": args }))
@@ -457,6 +468,28 @@ async fn test_health_returns_ok() {
 }
 
 // ── Skill Lifecycle ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_legacy_aliases_removed() {
+    let srv = TestServer::in_memory();
+    // These camelCase aliases should no longer be accepted
+    for method in [
+        "acp.context.addNode",
+        "acp.context.addEdge",
+        "acp.context.query",
+        "acp.context.subgraph",
+        "acp.graph.removeNode",
+        "acp.graph.removeEdge",
+    ] {
+        let resp = srv.call_raw(method, Value::Null).await;
+        assert!(
+            resp.error.is_some(),
+            "legacy alias {} should return error, got: {:?}",
+            method,
+            resp.result
+        );
+    }
+}
 
 #[tokio::test]
 async fn test_skill_full_lifecycle() {

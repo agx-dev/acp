@@ -38,13 +38,6 @@ impl AcpServer {
             "acp.graph.traverse" => self.handle_graph_traverse(&request.params).await,
             "acp.graph.remove_node" => self.handle_graph_remove_node(&request.params).await,
             "acp.graph.remove_edge" => self.handle_graph_remove_edge(&request.params).await,
-            // Legacy aliases
-            "acp.context.addNode" => self.handle_context_add_node(request.params).await,
-            "acp.context.addEdge" => self.handle_context_add_edge(request.params).await,
-            "acp.context.query" => self.handle_context_query(request.params).await,
-            "acp.context.subgraph" => self.handle_context_subgraph(&request.params).await,
-            "acp.graph.removeNode" => self.handle_graph_remove_node(&request.params).await,
-            "acp.graph.removeEdge" => self.handle_graph_remove_edge(&request.params).await,
 
             // ── Skill methods ──────────────────────────────────
             "acp.skill.register" => self.handle_skill_register(&request.params).await,
