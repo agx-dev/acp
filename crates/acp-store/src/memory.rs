@@ -169,7 +169,7 @@ impl MemoryStore for SqliteStore {
         if let Some(max_eps) = policy.episodic.max_episodes {
             let count: i64 = conn
                 .query_row(
-                    "SELECT COUNT(*) FROM episodes WHERE deleted_at IS NULL",
+                    "SELECT COUNT(*) FROM episodes WHERE deleted_at IS NULL AND protected = 0",
                     [],
                     |row| row.get(0),
                 )
