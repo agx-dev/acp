@@ -467,6 +467,49 @@ async fn test_health_returns_ok() {
     assert!(health["uptime_ms"].is_number());
 }
 
+// ── Input Validation ────────────────────────────────────
+
+#[tokio::test]
+async fn test_store_validates_importance_range() {
+    let srv = TestServer::in_memory();
+
+    // importance > 1.0 → error
+    let resp = srv.call_raw("acp.memory.store", json!({
+        "content": "test", "importance": 1.5
+    })).await;
+    assert!(
+        resp.error.is_some(),
+        "importance > 1.0 should return error"
+    );
+
+    // importance < 0.0 → error
+    let resp = srv.call_raw("acp.memory.store", json!({
+        "content": "test", "importance": -0.1
+    })).await;
+    assert!(
+        resp.error.is_some(),
+        "importance < 0.0 should return error"
+    );
+}
+
+#[tokio::test]
+async fn test_store_rejects_empty_content() {
+    let srv = TestServer::in_memory();
+    let resp = srv.call_raw("acp.memory.store", json!({
+        "content": ""
+    })).await;
+    assert!(resp.error.is_some(), "empty content should return error");
+}
+
+#[tokio::test]
+async fn test_recall_top_k_must_be_positive() {
+    let srv = TestServer::in_memory();
+    let resp = srv.call_raw("acp.memory.recall", json!({
+        "query": "test", "top_k": 0
+    })).await;
+    assert!(resp.error.is_some(), "top_k=0 should return error");
+}
+
 // ── Skill Lifecycle ──────────────────────────────────────
 
 #[tokio::test]

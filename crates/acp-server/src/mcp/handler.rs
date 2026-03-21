@@ -184,7 +184,16 @@ impl AcpServer {
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing content".into()))?;
 
+        if content.is_empty() {
+            return Err(AcpError::InvalidParams("content must not be empty".into()));
+        }
+
         let importance = params["importance"].as_f64().unwrap_or(0.7);
+        if !(0.0..=1.0).contains(&importance) {
+            return Err(AcpError::InvalidParams(
+                format!("importance must be between 0.0 and 1.0, got {}", importance)
+            ));
+        }
         let tags: Vec<String> = params["tags"]
             .as_array()
             .map(|arr| {
@@ -269,6 +278,12 @@ impl AcpServer {
     async fn handle_memory_recall(&self, params: &Value) -> Result<Value, AcpError> {
         let text = params["query"].as_str().map(String::from);
         let top_k = params["top_k"].as_u64().map(|k| k as usize);
+
+        if let Some(k) = top_k {
+            if k == 0 {
+                return Err(AcpError::InvalidParams("top_k must be > 0".into()));
+            }
+        }
 
         let layers = params["layers"]
             .as_array()
