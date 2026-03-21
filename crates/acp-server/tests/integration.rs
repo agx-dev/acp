@@ -416,7 +416,7 @@ async fn test_skill_invoke() {
         "input": { "user": "Alice" }
     })).await;
 
-    assert!(result["instruction"].as_str().unwrap().contains("hello"));
+    assert_eq!(result["instruction"].as_str().unwrap(), "Say hello to the user by name");
     assert_eq!(result["skill_id"].as_str().unwrap(), skill_id);
 
     // Performance counter should increment

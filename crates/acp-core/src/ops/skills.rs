@@ -25,6 +25,7 @@ pub trait SkillRegistry: Send + Sync {
     async fn list(&self) -> Result<Vec<SkillObject>, AcpError>;
 
     /// Invoke a skill by ID: returns instruction + input, increments invocation_count.
+    /// `input` is optional context data (pass `Value::Null` or an empty object if unused).
     async fn invoke(
         &self,
         id: &SkillId,

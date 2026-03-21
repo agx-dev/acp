@@ -113,7 +113,7 @@ pub struct PortableSkill {
 }
 
 /// Result returned when a skill is invoked.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillInvocationResult {
     pub skill_id: String,
     pub instruction: String,
