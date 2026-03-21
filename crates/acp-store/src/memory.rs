@@ -475,7 +475,7 @@ impl SqliteStore {
 
         let (sql, text_param) = if let Some(ref text) = query.text {
             (
-                "SELECT e.id, e.content_text, e.importance, e.timestamp
+                "SELECT e.id, e.content_text, e.importance, e.timestamp, e.tags
                  FROM episodes e
                  JOIN episodes_fts fts ON fts.rowid = e.rowid
                  WHERE episodes_fts MATCH ?1
@@ -486,7 +486,7 @@ impl SqliteStore {
             )
         } else {
             (
-                "SELECT id, content_text, importance, timestamp
+                "SELECT id, content_text, importance, timestamp, tags
                  FROM episodes
                  WHERE deleted_at IS NULL
                  ORDER BY timestamp DESC
@@ -507,49 +507,94 @@ impl SqliteStore {
         }
         .map_err(|e| AcpError::Internal(e.to_string()))?;
 
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AcpError::Internal(e.to_string()))
+        let mut entries = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+        // Post-filter by tags (Rust-side, since tags are stored as JSON text)
+        if !query.tags.is_empty() {
+            entries.retain(|e| {
+                query.tags.iter().all(|t| e.tags.contains(t))
+            });
+        }
+
+        Ok(entries)
     }
 
     fn recall_semantic(&self, query: &RecallQuery) -> Result<Vec<RecallEntry>, AcpError> {
         let conn = self.conn();
 
-        let (sql, text_param) = if let Some(ref text) = query.text {
-            (
-                "SELECT se.id, se.content, se.importance, se.confidence
-                 FROM semantic_entries se
-                 JOIN semantic_fts fts ON fts.rowid = se.rowid
-                 WHERE semantic_fts MATCH ?1
-                 AND se.deleted_at IS NULL
-                 ORDER BY rank
-                 LIMIT ?2",
-                Some(fts5_escape(text)),
-            )
+        // Build the min_importance SQL clause if requested
+        let importance_clause = if query.min_importance.is_some() {
+            " AND se.importance >= ?3"
         } else {
-            (
-                "SELECT id, content, importance, confidence
-                 FROM semantic_entries
-                 WHERE deleted_at IS NULL
-                 ORDER BY importance DESC
-                 LIMIT ?1",
-                None,
-            )
+            ""
+        };
+        let importance_clause_no_join = if query.min_importance.is_some() {
+            " AND importance >= ?2"
+        } else {
+            ""
         };
 
+        let sql_with_text = format!(
+            "SELECT se.id, se.content, se.importance, se.confidence, se.tags
+             FROM semantic_entries se
+             JOIN semantic_fts fts ON fts.rowid = se.rowid
+             WHERE semantic_fts MATCH ?1
+             AND se.deleted_at IS NULL{}
+             ORDER BY rank
+             LIMIT ?2",
+            importance_clause
+        );
+        let sql_without_text = format!(
+            "SELECT id, content, importance, confidence, tags
+             FROM semantic_entries
+             WHERE deleted_at IS NULL{}
+             ORDER BY importance DESC
+             LIMIT ?1",
+            importance_clause_no_join
+        );
+
         let top_k = query.top_k.unwrap_or(10) as i64;
-        let mut stmt = conn
-            .prepare(sql)
+        let mut entries: Vec<RecallEntry>;
+
+        if let Some(ref text) = query.text {
+            let escaped = fts5_escape(text);
+            let mut stmt = conn
+                .prepare(&sql_with_text)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+            let rows = if let Some(min_imp) = query.min_importance {
+                stmt.query_map(params![escaped, top_k, min_imp], map_semantic_row)
+            } else {
+                stmt.query_map(params![escaped, top_k], map_semantic_row)
+            }
             .map_err(|e| AcpError::Internal(e.to_string()))?;
-
-        let rows = if let Some(ref text) = text_param {
-            stmt.query_map(params![text, top_k], map_semantic_row)
+            entries = rows
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
         } else {
-            stmt.query_map(params![top_k], map_semantic_row)
+            let mut stmt = conn
+                .prepare(&sql_without_text)
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+            let rows = if let Some(min_imp) = query.min_importance {
+                stmt.query_map(params![top_k, min_imp], map_semantic_row)
+            } else {
+                stmt.query_map(params![top_k], map_semantic_row)
+            }
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+            entries = rows
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
         }
-        .map_err(|e| AcpError::Internal(e.to_string()))?;
 
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AcpError::Internal(e.to_string()))
+        // Post-filter by tags (Rust-side, since tags are stored as JSON text)
+        if !query.tags.is_empty() {
+            entries.retain(|e| {
+                query.tags.iter().all(|t| e.tags.contains(t))
+            });
+        }
+
+        Ok(entries)
     }
 
     fn recall_skills(&self, query: &RecallQuery) -> Result<Vec<RecallEntry>, AcpError> {
@@ -610,13 +655,19 @@ impl SqliteStore {
     }
 }
 
+fn parse_tags_json(raw: Option<String>) -> Vec<String> {
+    raw.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .unwrap_or_default()
+}
+
 fn map_episode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecallEntry> {
+    let tags_raw: Option<String> = row.get(4).unwrap_or(None);
     Ok(RecallEntry {
         id: EntryId(row.get(0)?),
         layer: Layer::Episodic,
         content: row.get(1)?,
         score: row.get::<_, f64>(2).unwrap_or(0.5),
-        tags: vec![],
+        tags: parse_tags_json(tags_raw),
         metadata: None,
     })
 }
@@ -624,12 +675,13 @@ fn map_episode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecallEntry> {
 fn map_semantic_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecallEntry> {
     let importance: f64 = row.get::<_, f64>(2).unwrap_or(0.5);
     let confidence: f64 = row.get::<_, f64>(3).unwrap_or(0.5);
+    let tags_raw: Option<String> = row.get(4).unwrap_or(None);
     Ok(RecallEntry {
         id: EntryId(row.get(0)?),
         layer: Layer::Semantic,
         content: row.get(1)?,
         score: importance * confidence,
-        tags: vec![],
+        tags: parse_tags_json(tags_raw),
         metadata: None,
     })
 }

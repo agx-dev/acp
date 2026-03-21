@@ -300,12 +300,25 @@ impl AcpServer {
             })
             .unwrap_or_else(|| vec![Layer::Semantic]);
 
+        let tags: Vec<String> = params["tags"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let min_importance = params["min_importance"].as_f64();
+
         let result = self
             .store
             .recall(RecallQuery {
                 text,
                 layers,
                 top_k,
+                tags,
+                min_importance,
                 ..Default::default()
             })
             .await?;

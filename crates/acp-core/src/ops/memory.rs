@@ -46,6 +46,8 @@ pub struct RecallQuery {
     pub top_k: Option<usize>,
     /// Minimum confidence threshold.
     pub min_confidence: Option<f64>,
+    /// Filter: only return entries with importance >= this value.
+    pub min_importance: Option<f64>,
     /// Filter by tags.
     #[serde(default)]
     pub tags: Vec<String>,

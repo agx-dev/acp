@@ -600,6 +600,39 @@ async fn test_recall_top_k_must_be_positive() {
     assert!(resp.error.is_some(), "top_k=0 should return error");
 }
 
+// ── Recall Filters ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_recall_filter_by_tags() {
+    let srv = TestServer::in_memory();
+    srv.tool_call("acp_store", json!({ "content": "Rust tips", "tags": ["rust", "lang"] })).await;
+    srv.tool_call("acp_store", json!({ "content": "Python tips", "tags": ["python", "lang"] })).await;
+    srv.tool_call("acp_store", json!({ "content": "General info", "tags": ["misc"] })).await;
+
+    let result = srv.tool_call("acp_recall", json!({
+        "query": "tips",
+        "tags": ["rust"]
+    })).await;
+
+    assert_eq!(result["total"], 1);
+    assert!(result["entries"][0]["content"].as_str().unwrap().contains("Rust"));
+}
+
+#[tokio::test]
+async fn test_recall_filter_by_min_importance() {
+    let srv = TestServer::in_memory();
+    srv.tool_call("acp_store", json!({ "content": "Low importance", "importance": 0.2 })).await;
+    srv.tool_call("acp_store", json!({ "content": "High importance", "importance": 0.9 })).await;
+
+    let result = srv.tool_call("acp_recall", json!({
+        "query": "importance",
+        "min_importance": 0.5
+    })).await;
+
+    assert_eq!(result["total"], 1);
+    assert!(result["entries"][0]["content"].as_str().unwrap().contains("High"));
+}
+
 // ── Skill Lifecycle ──────────────────────────────────────
 
 #[tokio::test]
