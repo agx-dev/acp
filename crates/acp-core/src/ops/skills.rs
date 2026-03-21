@@ -23,4 +23,11 @@ pub trait SkillRegistry: Send + Sync {
 
     /// List all registered skills.
     async fn list(&self) -> Result<Vec<SkillObject>, AcpError>;
+
+    /// Invoke a skill by ID: returns instruction + input, increments invocation_count.
+    async fn invoke(
+        &self,
+        id: &SkillId,
+        input: serde_json::Value,
+    ) -> Result<SkillInvocationResult, AcpError>;
 }

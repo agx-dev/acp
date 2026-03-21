@@ -391,6 +391,39 @@ async fn test_prune_and_restore_workflow() {
     assert_eq!(stats["semantic"], 5);
 }
 
+// ── Skill Invoke ─────────────────────────────────────────
+
+#[tokio::test]
+async fn test_skill_invoke() {
+    let srv = TestServer::in_memory();
+
+    // Register a skill first
+    let registered = srv.call("acp.skill.register", json!({
+        "id": "ignored", "name": "greet", "version": "1.0.0",
+        "description": "Greet the user",
+        "instruction": "Say hello to the user by name",
+        "trigger": { "patterns": [], "context_conditions": [], "explicit_invocation": true },
+        "dependencies": { "tools_required": [], "skills_required": [], "min_context_window": null },
+        "performance": { "invocation_count": 0, "success_rate": 0.0,
+                         "avg_tokens_per_use": 0.0, "avg_latency_ms": 0.0, "last_used": null },
+        "changelog": [], "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+    })).await;
+    let skill_id = registered["id"].as_str().unwrap().to_string();
+
+    // Invoke the skill
+    let result = srv.call("acp.skill.invoke", json!({
+        "id": skill_id,
+        "input": { "user": "Alice" }
+    })).await;
+
+    assert!(result["instruction"].as_str().unwrap().contains("hello"));
+    assert_eq!(result["skill_id"].as_str().unwrap(), skill_id);
+
+    // Performance counter should increment
+    let skill = srv.call("acp.skill.get", json!({ "id": skill_id })).await;
+    assert_eq!(skill["performance"]["invocation_count"], 1);
+}
+
 // ── Skill Lifecycle ──────────────────────────────────────
 
 #[tokio::test]

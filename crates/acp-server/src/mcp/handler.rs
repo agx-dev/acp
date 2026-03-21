@@ -53,6 +53,7 @@ impl AcpServer {
             "acp.skill.update" => self.handle_skill_update(&request.params).await,
             "acp.skill.export" => self.handle_skill_export(&request.params).await,
             "acp.skill.resolve" => self.handle_skill_resolve(&request.params).await,
+            "acp.skill.invoke" => self.handle_skill_invoke(&request.params).await,
 
             // ── Version methods ─────────────────────────────────
             "acp.version.snapshot" => self.handle_version_snapshot(&request.params).await,
@@ -147,6 +148,7 @@ impl AcpServer {
             "acp_skill_update" => self.handle_skill_update(arguments).await,
             "acp_skill_export" => self.handle_skill_export(arguments).await,
             "acp_skill_resolve" => self.handle_skill_resolve(arguments).await,
+            "acp_skill_invoke" => self.handle_skill_invoke(arguments).await,
             "acp_version_snapshot" => self.handle_version_snapshot(arguments).await,
             "acp_version_restore" => self.handle_version_restore(arguments).await,
             "acp_version_diff" => self.handle_version_diff(arguments).await,
@@ -609,5 +611,20 @@ impl AcpServer {
         let value =
             serde_json::to_value(&matches).map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(json!({ "matches": value, "total": matches.len() }))
+    }
+
+    async fn handle_skill_invoke(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let id = params["id"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing id".into()))?;
+        let input = params["input"].clone();
+        let result = self
+            .store
+            .invoke(&EntryId(id.to_string()), input)
+            .await?;
+        let value = serde_json::to_value(&result)
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(value)
     }
 }

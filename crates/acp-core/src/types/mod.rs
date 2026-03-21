@@ -17,5 +17,5 @@ pub use episode::{
 pub use graph::{Edge, GraphPattern, Node, NodeType, Relation, SubGraph};
 pub use retention::{EvictionStrategy, ForgetStrategy, PruneReport, RetentionPolicy};
 pub use semantic::{Provenance, SemanticEntry, SemanticSource};
-pub use skill::{PortableSkill, SkillContext, SkillMatch, SkillObject};
+pub use skill::{PortableSkill, SkillContext, SkillInvocationResult, SkillMatch, SkillObject};
 pub use version::{SnapshotConfig, SnapshotInfo, VersionDiff};

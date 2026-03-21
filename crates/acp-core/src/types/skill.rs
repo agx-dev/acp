@@ -111,3 +111,12 @@ pub struct PortableSkill {
     pub source_agent: Option<String>,
     pub exported_at: DateTime<Utc>,
 }
+
+/// Result returned when a skill is invoked.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SkillInvocationResult {
+    pub skill_id: String,
+    pub instruction: String,
+    pub input: serde_json::Value,
+    pub invoked_at: DateTime<Utc>,
+}

@@ -200,6 +200,32 @@ impl SkillRegistry for SqliteStore {
         })
     }
 
+    async fn invoke(
+        &self,
+        id: &SkillId,
+        input: serde_json::Value,
+    ) -> Result<SkillInvocationResult, AcpError> {
+        // 1. Fetch skill (returns NotFound if missing)
+        let skill = self.get(id).await?;
+
+        // 2. Increment invocation_count and update last_used
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE skills SET invocation_count = invocation_count + 1,
+             last_used = datetime('now'), updated_at = datetime('now')
+             WHERE id = ?1",
+            rusqlite::params![id.0],
+        )
+        .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+        Ok(SkillInvocationResult {
+            skill_id: id.0.clone(),
+            instruction: skill.instruction,
+            input,
+            invoked_at: chrono::Utc::now(),
+        })
+    }
+
     async fn resolve(&self, context: &SkillContext) -> Result<Vec<SkillMatch>, AcpError> {
         // Get all skills, then score them against the context
         let all_skills = self.list().await?;
