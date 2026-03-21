@@ -294,6 +294,18 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
             "inputSchema": { "type": "object", "properties": {}, "required": [] }
         }),
         json!({
+            "name": "acp_skill_invoke",
+            "description": "Invoke a registered skill by ID. Returns the instruction text and records the invocation in performance metrics.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Skill ID" },
+                    "input": { "type": "object", "description": "Input context for the skill (optional)" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
             "name": "acp_memory_prune",
             "description": "Prune old or low-importance memories according to retention policy. Removes expired episodes, low-importance semantic entries, and orphan graph nodes.",
             "inputSchema": {

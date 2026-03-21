@@ -435,6 +435,24 @@ async fn test_skill_invoke() {
     assert_eq!(skill["performance"]["invocation_count"], 1);
 }
 
+// ── Tools List ──────────────────────────────────────────
+
+#[tokio::test]
+async fn test_tools_list_includes_new_tools() {
+    let srv = TestServer::in_memory();
+    let tools = srv.call("tools/list", Value::Null).await;
+    let names: Vec<&str> = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["name"].as_str())
+        .collect();
+
+    assert!(names.contains(&"acp_capabilities"), "acp_capabilities should be in tools list");
+    assert!(names.contains(&"acp_health"), "acp_health should be in tools list");
+    assert!(names.contains(&"acp_skill_invoke"), "acp_skill_invoke should be in tools list");
+}
+
 // ── Capabilities & Health ────────────────────────────────
 
 #[tokio::test]
