@@ -490,15 +490,34 @@ async fn test_store_validates_importance_range() {
         resp.error.is_some(),
         "importance < 0.0 should return error"
     );
+
+    // Boundary values should be accepted
+    let resp = srv.call_raw("acp.memory.store", json!({
+        "content": "test", "importance": 0.0
+    })).await;
+    assert!(resp.error.is_none(), "importance = 0.0 should be valid");
+
+    let resp = srv.call_raw("acp.memory.store", json!({
+        "content": "test", "importance": 1.0
+    })).await;
+    assert!(resp.error.is_none(), "importance = 1.0 should be valid");
 }
 
 #[tokio::test]
 async fn test_store_rejects_empty_content() {
     let srv = TestServer::in_memory();
+
+    // Empty string
     let resp = srv.call_raw("acp.memory.store", json!({
         "content": ""
     })).await;
     assert!(resp.error.is_some(), "empty content should return error");
+
+    // Whitespace-only string
+    let resp = srv.call_raw("acp.memory.store", json!({
+        "content": "   "
+    })).await;
+    assert!(resp.error.is_some(), "whitespace-only content should return error");
 }
 
 #[tokio::test]

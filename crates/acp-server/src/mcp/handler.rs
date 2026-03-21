@@ -184,7 +184,7 @@ impl AcpServer {
             .as_str()
             .ok_or(AcpError::InvalidParams("Missing content".into()))?;
 
-        if content.is_empty() {
+        if content.trim().is_empty() {
             return Err(AcpError::InvalidParams("content must not be empty".into()));
         }
 
