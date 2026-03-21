@@ -12,6 +12,7 @@ pub struct AcpServer {
     pub store: SqliteStore,
     #[allow(dead_code)]
     embeddings: Box<dyn EmbeddingProvider>,
+    pub(crate) started_at: std::time::Instant,
 }
 
 /// Configuration for creating an AcpServer with a specific embedding provider.
@@ -36,7 +37,7 @@ impl AcpServer {
             &config.openai_model,
         )?;
 
-        Ok(Self { store, embeddings })
+        Ok(Self { store, embeddings, started_at: std::time::Instant::now() })
     }
 
     pub fn in_memory() -> Result<Self, AcpError> {
@@ -45,7 +46,7 @@ impl AcpServer {
         let embeddings: Box<dyn EmbeddingProvider> =
             Box::new(CachedProvider::new(Box::new(mock), 1_000));
 
-        Ok(Self { store, embeddings })
+        Ok(Self { store, embeddings, started_at: std::time::Instant::now() })
     }
 }
 

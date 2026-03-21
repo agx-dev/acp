@@ -68,6 +68,10 @@ impl AcpServer {
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
 
+            // ── Capabilities & Health ───────────────────────────
+            "acp.capabilities" => self.handle_capabilities().await,
+            "acp.health" => self.handle_health().await,
+
             other => Err(AcpError::MethodNotFound(other.to_string())),
         };
 
@@ -155,6 +159,8 @@ impl AcpServer {
             "acp_version_list" => self.handle_version_list().await,
             "acp_exchange_export" => self.handle_exchange_export().await,
             "acp_exchange_import" => self.handle_exchange_import(arguments).await,
+            "acp_capabilities" => self.handle_capabilities().await,
+            "acp_health" => self.handle_health().await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
         };
 
@@ -626,5 +632,46 @@ impl AcpServer {
         let value = serde_json::to_value(&result)
             .map_err(|e| AcpError::Internal(e.to_string()))?;
         Ok(value)
+    }
+
+    // ── Capabilities & Health ────────────────────────────
+
+    async fn handle_capabilities(&self) -> Result<Value, AcpError> {
+        use acp_core::protocol::methods::AcpMethod;
+
+        let all_methods = [
+            AcpMethod::MemoryStore, AcpMethod::MemoryRecall, AcpMethod::MemoryForget,
+            AcpMethod::MemoryPrune, AcpMethod::MemoryStats,
+            AcpMethod::GraphAddNode, AcpMethod::GraphAddEdge, AcpMethod::GraphQuery,
+            AcpMethod::GraphSubgraph, AcpMethod::GraphTraverse,
+            AcpMethod::GraphRemoveNode, AcpMethod::GraphRemoveEdge,
+            AcpMethod::SkillRegister, AcpMethod::SkillResolve, AcpMethod::SkillGet,
+            AcpMethod::SkillUpdate, AcpMethod::SkillExport, AcpMethod::SkillList,
+            AcpMethod::SkillInvoke,
+            AcpMethod::VersionSnapshot, AcpMethod::VersionRestore,
+            AcpMethod::VersionDiff, AcpMethod::VersionList,
+            AcpMethod::ExchangeExport, AcpMethod::ExchangeImport,
+            AcpMethod::Capabilities, AcpMethod::Health,
+        ];
+
+        let methods: Vec<Value> = all_methods.iter().map(|m| json!({
+            "method": m.as_str(),
+            "conformance": format!("{:?}", m.conformance()).to_lowercase(),
+        })).collect();
+
+        Ok(json!({
+            "conformance": "full",
+            "acp_version": "1.0.0",
+            "server_version": env!("CARGO_PKG_VERSION"),
+            "methods": methods,
+        }))
+    }
+
+    async fn handle_health(&self) -> Result<Value, AcpError> {
+        Ok(json!({
+            "status": "ok",
+            "version": env!("CARGO_PKG_VERSION"),
+            "uptime_ms": self.started_at.elapsed().as_millis() as u64,
+        }))
     }
 }

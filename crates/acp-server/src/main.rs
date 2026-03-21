@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = acp_server::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 19);
+        assert_eq!(tools.len(), 21);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
@@ -231,6 +231,8 @@ mod tests {
         assert!(names.contains(&"acp_exchange_export"));
         assert!(names.contains(&"acp_exchange_import"));
         assert!(names.contains(&"acp_memory_prune"));
+        assert!(names.contains(&"acp_capabilities"));
+        assert!(names.contains(&"acp_health"));
     }
 
     // ── MCP Protocol Tests ────────────────────────────────────
@@ -270,7 +272,7 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 19);
+        assert_eq!(tools.len(), 21);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
@@ -281,6 +283,8 @@ mod tests {
         assert!(names.contains(&"acp_exchange_export"));
         assert!(names.contains(&"acp_exchange_import"));
         assert!(names.contains(&"acp_memory_prune"));
+        assert!(names.contains(&"acp_capabilities"));
+        assert!(names.contains(&"acp_health"));
     }
 
     #[tokio::test]

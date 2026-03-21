@@ -284,6 +284,16 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
             }
         }),
         json!({
+            "name": "acp_capabilities",
+            "description": "List all ACP methods supported by this server with their conformance level.",
+            "inputSchema": { "type": "object", "properties": {}, "required": [] }
+        }),
+        json!({
+            "name": "acp_health",
+            "description": "Check server health and uptime.",
+            "inputSchema": { "type": "object", "properties": {}, "required": [] }
+        }),
+        json!({
             "name": "acp_memory_prune",
             "description": "Prune old or low-importance memories according to retention policy. Removes expired episodes, low-importance semantic entries, and orphan graph nodes.",
             "inputSchema": {

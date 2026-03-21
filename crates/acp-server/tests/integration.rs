@@ -424,6 +424,38 @@ async fn test_skill_invoke() {
     assert_eq!(skill["performance"]["invocation_count"], 1);
 }
 
+// ── Capabilities & Health ────────────────────────────────
+
+#[tokio::test]
+async fn test_capabilities_lists_all_methods() {
+    let srv = TestServer::in_memory();
+    let caps = srv.call("acp.capabilities", Value::Null).await;
+
+    let methods = caps["methods"].as_array().unwrap();
+    assert!(methods.len() >= 26, "should list all AcpMethod variants");
+
+    // Check structure
+    let first = &methods[0];
+    assert!(first["method"].is_string());
+    assert!(first["conformance"].is_string());
+
+    // Should include the new ones
+    let method_names: Vec<&str> = methods.iter()
+        .filter_map(|m| m["method"].as_str())
+        .collect();
+    assert!(method_names.contains(&"acp.capabilities"));
+    assert!(method_names.contains(&"acp.skill.invoke"));
+}
+
+#[tokio::test]
+async fn test_health_returns_ok() {
+    let srv = TestServer::in_memory();
+    let health = srv.call("acp.health", Value::Null).await;
+    assert_eq!(health["status"], "ok");
+    assert!(health["version"].is_string());
+    assert!(health["uptime_ms"].is_number());
+}
+
 // ── Skill Lifecycle ──────────────────────────────────────
 
 #[tokio::test]
