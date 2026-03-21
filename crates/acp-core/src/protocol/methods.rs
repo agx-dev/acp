@@ -122,6 +122,21 @@ impl AcpMethod {
         }
     }
 
+    /// All protocol methods in declaration order.
+    pub fn all() -> &'static [Self] {
+        use AcpMethod::*;
+        &[
+            MemoryStore, MemoryRecall, MemoryForget, MemoryPrune, MemoryStats,
+            GraphAddNode, GraphAddEdge, GraphQuery, GraphSubgraph, GraphTraverse,
+            GraphRemoveNode, GraphRemoveEdge,
+            SkillRegister, SkillResolve, SkillGet, SkillUpdate, SkillExport, SkillList,
+            SkillInvoke,
+            VersionSnapshot, VersionRestore, VersionDiff, VersionList,
+            ExchangeExport, ExchangeImport,
+            Capabilities, Health,
+        ]
+    }
+
     /// Minimum conformance level required for this method.
     pub fn conformance(&self) -> crate::types::ConformanceLevel {
         use crate::types::ConformanceLevel::*;

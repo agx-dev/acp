@@ -639,25 +639,14 @@ impl AcpServer {
     async fn handle_capabilities(&self) -> Result<Value, AcpError> {
         use acp_core::protocol::methods::AcpMethod;
 
-        let all_methods = [
-            AcpMethod::MemoryStore, AcpMethod::MemoryRecall, AcpMethod::MemoryForget,
-            AcpMethod::MemoryPrune, AcpMethod::MemoryStats,
-            AcpMethod::GraphAddNode, AcpMethod::GraphAddEdge, AcpMethod::GraphQuery,
-            AcpMethod::GraphSubgraph, AcpMethod::GraphTraverse,
-            AcpMethod::GraphRemoveNode, AcpMethod::GraphRemoveEdge,
-            AcpMethod::SkillRegister, AcpMethod::SkillResolve, AcpMethod::SkillGet,
-            AcpMethod::SkillUpdate, AcpMethod::SkillExport, AcpMethod::SkillList,
-            AcpMethod::SkillInvoke,
-            AcpMethod::VersionSnapshot, AcpMethod::VersionRestore,
-            AcpMethod::VersionDiff, AcpMethod::VersionList,
-            AcpMethod::ExchangeExport, AcpMethod::ExchangeImport,
-            AcpMethod::Capabilities, AcpMethod::Health,
-        ];
-
-        let methods: Vec<Value> = all_methods.iter().map(|m| json!({
-            "method": m.as_str(),
-            "conformance": format!("{:?}", m.conformance()).to_lowercase(),
-        })).collect();
+        let methods: Vec<Value> = AcpMethod::all()
+            .iter()
+            .map(|m| {
+                let conformance = serde_json::to_value(m.conformance())
+                    .unwrap_or(Value::Null);
+                json!({ "method": m.as_str(), "conformance": conformance })
+            })
+            .collect();
 
         Ok(json!({
             "conformance": "full",
