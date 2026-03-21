@@ -26,6 +26,7 @@ pub enum AcpMethod {
     SkillUpdate,
     SkillExport,
     SkillList,
+    SkillInvoke,
 
     // Version operations (Standard)
     VersionSnapshot,
@@ -36,6 +37,10 @@ pub enum AcpMethod {
     // Exchange operations (Core)
     ExchangeExport,
     ExchangeImport,
+
+    // Spec / introspection (Core)
+    Capabilities,
+    Health,
 }
 
 impl AcpMethod {
@@ -62,6 +67,7 @@ impl AcpMethod {
             "acp.skill.update" => Some(Self::SkillUpdate),
             "acp.skill.export" => Some(Self::SkillExport),
             "acp.skill.list" => Some(Self::SkillList),
+            "acp.skill.invoke" => Some(Self::SkillInvoke),
 
             "acp.version.snapshot" => Some(Self::VersionSnapshot),
             "acp.version.restore" => Some(Self::VersionRestore),
@@ -70,6 +76,9 @@ impl AcpMethod {
 
             "acp.exchange.export" => Some(Self::ExchangeExport),
             "acp.exchange.import" => Some(Self::ExchangeImport),
+
+            "acp.capabilities" => Some(Self::Capabilities),
+            "acp.health" => Some(Self::Health),
 
             _ => None,
         }
@@ -98,6 +107,7 @@ impl AcpMethod {
             Self::SkillUpdate => "acp.skill.update",
             Self::SkillExport => "acp.skill.export",
             Self::SkillList => "acp.skill.list",
+            Self::SkillInvoke => "acp.skill.invoke",
 
             Self::VersionSnapshot => "acp.version.snapshot",
             Self::VersionRestore => "acp.version.restore",
@@ -106,6 +116,9 @@ impl AcpMethod {
 
             Self::ExchangeExport => "acp.exchange.export",
             Self::ExchangeImport => "acp.exchange.import",
+
+            Self::Capabilities => "acp.capabilities",
+            Self::Health => "acp.health",
         }
     }
 
@@ -119,7 +132,9 @@ impl AcpMethod {
             | Self::MemoryPrune
             | Self::MemoryStats
             | Self::ExchangeExport
-            | Self::ExchangeImport => Core,
+            | Self::ExchangeImport
+            | Self::Capabilities
+            | Self::Health => Core,
 
             Self::GraphAddNode
             | Self::GraphAddEdge
@@ -138,7 +153,8 @@ impl AcpMethod {
             | Self::SkillGet
             | Self::SkillUpdate
             | Self::SkillExport
-            | Self::SkillList => Full,
+            | Self::SkillList
+            | Self::SkillInvoke => Full,
         }
     }
 }
@@ -164,5 +180,26 @@ mod tests {
     #[test]
     fn unknown_method_returns_none() {
         assert!(AcpMethod::parse("acp.foo.bar").is_none());
+    }
+
+    #[test]
+    fn new_methods_parse_and_roundtrip() {
+        for (s, expected) in [
+            ("acp.capabilities", AcpMethod::Capabilities),
+            ("acp.health", AcpMethod::Health),
+            ("acp.skill.invoke", AcpMethod::SkillInvoke),
+        ] {
+            let m = AcpMethod::parse(s).expect(s);
+            assert_eq!(m, expected);
+            assert_eq!(m.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn capabilities_and_health_are_core() {
+        use crate::types::ConformanceLevel::*;
+        assert_eq!(AcpMethod::Capabilities.conformance(), Core);
+        assert_eq!(AcpMethod::Health.conformance(), Core);
+        assert_eq!(AcpMethod::SkillInvoke.conformance(), Full);
     }
 }
