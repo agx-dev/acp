@@ -402,6 +402,59 @@ async fn test_prune_and_restore_workflow() {
     assert_eq!(stats["semantic"], 5);
 }
 
+// ── Dry-run Prune ───────────────────────────────────────
+
+#[tokio::test]
+async fn test_prune_dry_run_does_not_delete() {
+    let srv = TestServer::in_memory();
+
+    // Store 5 semantic entries with varying importance
+    for i in 0..5 {
+        srv.tool_call("acp_store", json!({
+            "content": format!("Item {}", i),
+            "importance": (i as f64) * 0.2 + 0.1,  // 0.1, 0.3, 0.5, 0.7, 0.9
+        })).await;
+    }
+
+    let stats_before = srv.call("acp.memory.stats", Value::Null).await;
+    assert_eq!(stats_before["semantic"], 5);
+
+    // Dry-run prune (should not actually delete)
+    let report = srv.tool_call("acp_memory_prune", json!({
+        "dry_run": true,
+        "semantic": { "min_importance": 0.5 }
+    })).await;
+
+    assert_eq!(report["dry_run"], true);
+    assert_eq!(report["semantic_pruned"], 2);  // items with importance 0.1 and 0.3
+
+    // Data must still be intact
+    let stats_after = srv.call("acp.memory.stats", Value::Null).await;
+    assert_eq!(stats_after["semantic"], 5, "dry_run must not delete anything");
+}
+
+#[tokio::test]
+async fn test_prune_dry_run_false_does_delete() {
+    let srv = TestServer::in_memory();
+    for i in 0..5 {
+        srv.tool_call("acp_store", json!({
+            "content": format!("Item {}", i),
+            "importance": (i as f64) * 0.2 + 0.1,
+        })).await;
+    }
+
+    let report = srv.tool_call("acp_memory_prune", json!({
+        "dry_run": false,
+        "semantic": { "min_importance": 0.5 }
+    })).await;
+
+    assert_eq!(report["dry_run"], false);
+    assert_eq!(report["semantic_pruned"], 2);
+
+    let stats = srv.call("acp.memory.stats", Value::Null).await;
+    assert_eq!(stats["semantic"], 3);
+}
+
 // ── Skill Invoke ─────────────────────────────────────────
 
 #[tokio::test]

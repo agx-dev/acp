@@ -3,9 +3,15 @@ use serde::{Deserialize, Serialize};
 /// Retention policy for memory management.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RetentionPolicy {
+    #[serde(default)]
     pub episodic: EpisodicRetention,
+    #[serde(default)]
     pub semantic: SemanticRetention,
+    #[serde(default)]
     pub graph: GraphRetention,
+    /// If true, compute what would be pruned but do not execute any deletes.
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +104,8 @@ pub enum ForgetStrategy {
 /// Report from a prune operation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PruneReport {
+    /// Whether this was a dry-run (no data was actually deleted).
+    pub dry_run: bool,
     pub episodes_pruned: u64,
     pub semantic_pruned: u64,
     pub nodes_pruned: u64,

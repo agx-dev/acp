@@ -367,6 +367,7 @@ impl AcpServer {
         let report = self.store.prune(&policy).await?;
 
         Ok(json!({
+            "dry_run": report.dry_run,
             "episodes_pruned": report.episodes_pruned,
             "semantic_pruned": report.semantic_pruned,
             "nodes_pruned": report.nodes_pruned,

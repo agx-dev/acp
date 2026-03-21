@@ -139,18 +139,30 @@ impl MemoryStore for SqliteStore {
     ) -> Result<acp_core::types::retention::PruneReport, AcpError> {
         let conn = self.conn();
         let mut report = acp_core::types::retention::PruneReport::default();
+        report.dry_run = policy.dry_run;
 
         // Prune old episodes (soft-delete to allow snapshot restore)
         if let Some(max_age) = policy.episodic.max_age_days {
-            let deleted: usize = conn
-                .execute(
+            let count: u64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM episodes
+                     WHERE deleted_at IS NULL AND protected = 0
+                     AND timestamp < datetime('now', ?1)",
+                    params![format!("-{} days", max_age)],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            report.episodes_pruned = count;
+
+            if !policy.dry_run {
+                conn.execute(
                     "UPDATE episodes SET deleted_at = datetime('now')
                      WHERE deleted_at IS NULL AND protected = 0
                      AND timestamp < datetime('now', ?1)",
                     params![format!("-{} days", max_age)],
                 )
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
-            report.episodes_pruned = deleted as u64;
+            }
         }
 
         // Prune by max count (soft-delete)
@@ -165,8 +177,10 @@ impl MemoryStore for SqliteStore {
 
             if count > max_eps as i64 {
                 let to_remove = count - max_eps as i64;
-                let deleted: usize = conn
-                    .execute(
+                report.episodes_pruned += to_remove as u64;
+
+                if !policy.dry_run {
+                    conn.execute(
                         "UPDATE episodes SET deleted_at = datetime('now')
                          WHERE id IN (
                             SELECT id FROM episodes WHERE deleted_at IS NULL AND protected = 0
@@ -175,34 +189,56 @@ impl MemoryStore for SqliteStore {
                         params![to_remove],
                     )
                     .map_err(|e| AcpError::Internal(e.to_string()))?;
-                report.episodes_pruned += deleted as u64;
+                }
             }
         }
 
         // Prune low-importance semantic entries (soft-delete)
         if let Some(min_imp) = policy.semantic.min_importance {
-            let deleted: usize = conn
-                .execute(
+            let count: u64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM semantic_entries
+                     WHERE deleted_at IS NULL AND protected = 0
+                     AND importance < ?1",
+                    params![min_imp],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            report.semantic_pruned = count;
+
+            if !policy.dry_run {
+                conn.execute(
                     "UPDATE semantic_entries SET deleted_at = datetime('now')
                      WHERE deleted_at IS NULL AND protected = 0
                      AND importance < ?1",
                     params![min_imp],
                 )
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
-            report.semantic_pruned = deleted as u64;
+            }
         }
 
         // Prune orphan graph nodes
         if policy.graph.prune_orphans {
-            let deleted: usize = conn
-                .execute(
+            let count: u64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM nodes WHERE id NOT IN (
+                        SELECT source FROM edges UNION SELECT target FROM edges
+                    )",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            report.nodes_pruned = count;
+
+            if !policy.dry_run {
+                conn.execute(
                     "DELETE FROM nodes WHERE id NOT IN (
                         SELECT source FROM edges UNION SELECT target FROM edges
                     )",
                     [],
                 )
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
-            report.nodes_pruned = deleted as u64;
+            }
         }
 
         Ok(report)
