@@ -511,11 +511,12 @@ impl SqliteStore {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| AcpError::Internal(e.to_string()))?;
 
-        // Post-filter by tags (Rust-side, since tags are stored as JSON text)
+        // Post-filter by tags and min_importance (Rust-side)
         if !query.tags.is_empty() {
-            entries.retain(|e| {
-                query.tags.iter().all(|t| e.tags.contains(t))
-            });
+            entries.retain(|e| query.tags.iter().all(|t| e.tags.contains(t)));
+        }
+        if let Some(min_imp) = query.min_importance {
+            entries.retain(|e| e.score >= min_imp);
         }
 
         Ok(entries)
@@ -656,8 +657,12 @@ impl SqliteStore {
 }
 
 fn parse_tags_json(raw: Option<String>) -> Vec<String> {
-    raw.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-        .unwrap_or_default()
+    raw.and_then(|s| {
+        serde_json::from_str::<Vec<String>>(&s)
+            .map_err(|e| tracing::warn!("Failed to parse tags JSON '{}': {}", s, e))
+            .ok()
+    })
+    .unwrap_or_default()
 }
 
 fn map_episode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecallEntry> {
