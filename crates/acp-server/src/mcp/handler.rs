@@ -251,7 +251,11 @@ impl AcpServer {
                 let embedding = match self.embeddings.embed(content).await {
                     Ok(vec) => Some(vec),
                     Err(e) => {
-                        tracing::warn!("embedding generation failed: {}", e);
+                        tracing::warn!(
+                            content_len = content.len(),
+                            err = %e,
+                            "embedding generation failed, storing without embedding"
+                        );
                         None
                     }
                 };

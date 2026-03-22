@@ -34,3 +34,5 @@ clap = { version = "4", features = ["derive", "env"] }
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = "3"
+async-trait = { workspace = true }
+acp-embeddings = { path = "../acp-embeddings" }

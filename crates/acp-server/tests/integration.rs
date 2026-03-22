@@ -7,6 +7,21 @@ use acp_core::*;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+/// Embedding provider that always fails — used to test non-fatal fallback.
+struct FailingProvider;
+
+#[async_trait::async_trait]
+impl acp_embeddings::EmbeddingProvider for FailingProvider {
+    async fn embed(&self, _: &str) -> Result<Vec<f32>, AcpError> {
+        Err(AcpError::Internal("intentional test failure".into()))
+    }
+    async fn embed_batch(&self, _: &[&str]) -> Result<Vec<Vec<f32>>, AcpError> {
+        Err(AcpError::Internal("intentional test failure".into()))
+    }
+    fn dimensions(&self) -> usize { 384 }
+    fn model_id(&self) -> &str { "failing-provider" }
+}
+
 mod helpers {
     use super::*;
 
@@ -18,6 +33,12 @@ mod helpers {
         pub fn in_memory() -> Self {
             Self {
                 inner: acp_server::AcpServer::in_memory().unwrap(),
+            }
+        }
+
+        pub fn with_provider(provider: Box<dyn acp_embeddings::EmbeddingProvider>) -> Self {
+            Self {
+                inner: acp_server::AcpServer::in_memory_with_provider(provider).unwrap(),
             }
         }
 
@@ -735,6 +756,29 @@ async fn test_skill_full_lifecycle() {
         .call("acp.skill.export", json!({ "id": skill_id }))
         .await;
     assert_eq!(portable["skill"]["name"], "deploy-prod");
+}
+
+#[tokio::test]
+async fn test_store_semantic_embedding_failure_is_nonfatal() {
+    let srv = helpers::TestServer::with_provider(Box::new(FailingProvider));
+
+    // Store must succeed even when embedding generation fails
+    let stored = srv
+        .tool_call(
+            "acp_store",
+            json!({ "content": "Some content", "importance": 0.7 }),
+        )
+        .await;
+
+    assert!(stored.get("id").is_some(), "store must succeed despite embedding failure");
+
+    // Recall must return the entry with has_embedding: false
+    let recalled = srv
+        .tool_call("acp_recall", json!({ "query": "content", "layers": ["semantic"] }))
+        .await;
+
+    assert_eq!(recalled["total"], 1);
+    assert_eq!(recalled["entries"][0]["has_embedding"], false);
 }
 
 #[tokio::test]

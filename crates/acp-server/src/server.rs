@@ -47,6 +47,12 @@ impl AcpServer {
 
         Ok(Self { store, embeddings, started_at: std::time::Instant::now() })
     }
+
+    /// Create an in-memory server with a custom embedding provider (for testing).
+    pub fn in_memory_with_provider(embeddings: Box<dyn EmbeddingProvider>) -> Result<Self, AcpError> {
+        let store = SqliteStore::in_memory().map_err(|e| AcpError::Internal(e.to_string()))?;
+        Ok(Self { store, embeddings, started_at: std::time::Instant::now() })
+    }
 }
 
 fn create_embedding_provider(
