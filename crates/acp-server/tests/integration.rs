@@ -736,3 +736,34 @@ async fn test_skill_full_lifecycle() {
         .await;
     assert_eq!(portable["skill"]["name"], "deploy-prod");
 }
+
+#[tokio::test]
+async fn test_store_semantic_generates_embedding() {
+    let srv = TestServer::in_memory();
+
+    let stored = srv
+        .tool_call(
+            "acp_store",
+            json!({
+                "content": "Hexagonal architecture separates domain from infra",
+                "importance": 0.9
+            }),
+        )
+        .await;
+
+    let id = stored["id"].as_str().unwrap();
+
+    let recalled = srv
+        .tool_call(
+            "acp_recall",
+            json!({
+                "query": "architecture",
+                "layers": ["semantic"]
+            }),
+        )
+        .await;
+
+    assert_eq!(recalled["total"], 1);
+    assert_eq!(recalled["entries"][0]["id"], id);
+    assert_eq!(recalled["entries"][0]["has_embedding"], true);
+}

@@ -77,6 +77,9 @@ pub struct RecallEntry {
     pub score: f64,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// True if this entry has a stored embedding vector.
+    #[serde(default)]
+    pub has_embedding: bool,
     pub metadata: Option<serde_json::Value>,
 }
 

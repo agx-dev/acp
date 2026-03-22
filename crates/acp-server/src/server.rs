@@ -10,8 +10,7 @@ use acp_store::SqliteStore;
 /// (via `ContextGraphStore` trait), so no separate graph field is needed.
 pub struct AcpServer {
     pub store: SqliteStore,
-    #[allow(dead_code)]
-    embeddings: Box<dyn EmbeddingProvider>,
+    pub(crate) embeddings: Box<dyn EmbeddingProvider>,
     pub(crate) started_at: std::time::Instant,
 }
 

@@ -538,7 +538,7 @@ impl SqliteStore {
         };
 
         let sql_with_text = format!(
-            "SELECT se.id, se.content, se.importance, se.confidence, se.tags
+            "SELECT se.id, se.content, se.importance, se.confidence, se.tags, se.embedding
              FROM semantic_entries se
              JOIN semantic_fts fts ON fts.rowid = se.rowid
              WHERE semantic_fts MATCH ?1
@@ -548,7 +548,7 @@ impl SqliteStore {
             importance_clause
         );
         let sql_without_text = format!(
-            "SELECT id, content, importance, confidence, tags
+            "SELECT id, content, importance, confidence, tags, embedding
              FROM semantic_entries
              WHERE deleted_at IS NULL{}
              ORDER BY importance DESC
@@ -623,6 +623,7 @@ impl SqliteStore {
                         content: row.get(1)?,
                         score: row.get::<_, f64>(2).unwrap_or(0.5),
                         tags: vec![],
+                        has_embedding: false,
                         metadata: None,
                     })
                 })
@@ -646,6 +647,7 @@ impl SqliteStore {
                         content: row.get(1)?,
                         score: row.get::<_, f64>(2).unwrap_or(0.5),
                         tags: vec![],
+                        has_embedding: false,
                         metadata: None,
                     })
                 })
@@ -673,6 +675,7 @@ fn map_episode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecallEntry> {
         content: row.get(1)?,
         score: row.get::<_, f64>(2).unwrap_or(0.5),
         tags: parse_tags_json(tags_raw),
+        has_embedding: false,
         metadata: None,
     })
 }
@@ -681,12 +684,14 @@ fn map_semantic_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecallEntry> {
     let importance: f64 = row.get::<_, f64>(2).unwrap_or(0.5);
     let confidence: f64 = row.get::<_, f64>(3).unwrap_or(0.5);
     let tags_raw: Option<String> = row.get(4).unwrap_or(None);
+    let embedding_blob: Option<Vec<u8>> = row.get(5).unwrap_or(None);
     Ok(RecallEntry {
         id: EntryId(row.get(0)?),
         layer: Layer::Semantic,
         content: row.get(1)?,
         score: importance * confidence,
         tags: parse_tags_json(tags_raw),
+        has_embedding: embedding_blob.is_some(),
         metadata: None,
     })
 }

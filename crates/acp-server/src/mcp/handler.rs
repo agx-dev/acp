@@ -248,10 +248,17 @@ impl AcpServer {
                 (Layer::Episodic, StoreEntry::Episode(ep))
             }
             _ => {
+                let embedding = match self.embeddings.embed(content).await {
+                    Ok(vec) => Some(vec),
+                    Err(e) => {
+                        tracing::warn!("embedding generation failed: {}", e);
+                        None
+                    }
+                };
                 let entry = SemanticEntry {
                     id: EntryId::new("sem"),
                     content: content.to_string(),
-                    embedding: None,
+                    embedding,
                     source: types::semantic::SemanticSource::Manual,
                     confidence: Confidence::new(0.9).unwrap(),
                     importance,
@@ -330,6 +337,7 @@ impl AcpServer {
                 "content": e.content,
                 "score": e.score,
                 "tags": e.tags,
+                "has_embedding": e.has_embedding,
             })).collect::<Vec<_>>(),
             "total": result.entries.len(),
         }))
