@@ -2,17 +2,30 @@ use async_trait::async_trait;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
+use acp_core::types::graph::{Edge, Node};
 use acp_core::types::version::*;
 use acp_core::{AcpError, EntryId, VersionManager};
 
+use crate::graph::{insert_edge, insert_node};
 use crate::store::SqliteStore;
 
 /// Internal snapshot data stored as JSON BLOB.
+///
+/// Nodes and edges are captured in full (not just ids) because the graph has no
+/// soft-delete: restoring a snapshot must be able to re-insert nodes/edges that
+/// were deleted after the snapshot was taken.
 #[derive(Debug, Serialize, Deserialize)]
 struct SnapshotData {
     episode_ids: Vec<String>,
     semantic_ids: Vec<String>,
     skill_ids: Vec<String>,
+    /// Full graph node state at snapshot time. `#[serde(default)]` keeps
+    /// older-shaped snapshot blobs (without this field) deserializable.
+    #[serde(default)]
+    nodes: Vec<Node>,
+    /// Full graph edge state at snapshot time.
+    #[serde(default)]
+    edges: Vec<Edge>,
 }
 
 #[async_trait]
@@ -37,10 +50,17 @@ impl VersionManager for SqliteStore {
         )?;
         let skill_ids = collect_ids(&conn, "SELECT id FROM skills")?;
 
+        // Capture the full graph state (nodes + edges) from the in-memory engine.
+        // engine_export() locks graph_read internally, not the SQLite mutex, so it
+        // is safe to call while holding `conn`.
+        let exported = self.engine_export();
+
         let data = SnapshotData {
             episode_ids,
             semantic_ids,
             skill_ids,
+            nodes: exported.nodes,
+            edges: exported.edges,
         };
 
         let json_bytes =
@@ -62,8 +82,8 @@ impl VersionManager for SqliteStore {
         let stats = SnapshotStats {
             episodes_count: data.episode_ids.len() as u64,
             semantic_count: data.semantic_ids.len() as u64,
-            nodes_count: 0,
-            edges_count: 0,
+            nodes_count: data.nodes.len() as u64,
+            edges_count: data.edges.len() as u64,
             skills_count: data.skill_ids.len() as u64,
             size_bytes: size_bytes as u64,
         };
@@ -203,6 +223,28 @@ impl VersionManager for SqliteStore {
                 .map_err(|e| AcpError::Internal(e.to_string()))?;
         }
 
+        // Restore the graph: wipe current nodes/edges and re-insert the snapshot's.
+        // Nodes/edges have no soft-delete, so we replace the persisted state wholesale.
+        conn.execute("DELETE FROM edges", [])
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+        conn.execute("DELETE FROM nodes", [])
+            .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+        for node in &data.nodes {
+            insert_node(&conn, node)?;
+        }
+        for edge in &data.edges {
+            insert_edge(&conn, edge)?;
+        }
+
+        // Drop the SQLite guard before rebuilding the engine: load_graph() locks
+        // the SQLite mutex itself, so holding `conn` here would deadlock.
+        drop(conn);
+
+        // Rebuild the in-memory engine from scratch so it matches SQLite exactly.
+        self.reset_graph_engine();
+        self.load_graph()?;
+
         Ok(())
     }
 
@@ -241,21 +283,29 @@ impl VersionManager for SqliteStore {
         let (sem_added, sem_removed) = diff_count(&from_data.semantic_ids, &to_data.semantic_ids);
         let (sk_added, sk_removed) = diff_count(&from_data.skill_ids, &to_data.skill_ids);
 
+        let from_node_ids: Vec<String> = from_data.nodes.iter().map(|n| n.id.0.clone()).collect();
+        let to_node_ids: Vec<String> = to_data.nodes.iter().map(|n| n.id.0.clone()).collect();
+        let (node_added, node_removed) = diff_count(&from_node_ids, &to_node_ids);
+
+        let from_edge_ids: Vec<String> = from_data.edges.iter().map(|e| e.id.0.clone()).collect();
+        let to_edge_ids: Vec<String> = to_data.edges.iter().map(|e| e.id.0.clone()).collect();
+        let (edge_added, edge_removed) = diff_count(&from_edge_ids, &to_edge_ids);
+
         Ok(VersionDiff {
             from: from.to_string(),
             to: to.to_string(),
             added: DiffCounts {
                 episodes: ep_added,
                 semantic_entries: sem_added,
-                nodes: 0,
-                edges: 0,
+                nodes: node_added,
+                edges: edge_added,
                 skills: sk_added,
             },
             removed: DiffCounts {
                 episodes: ep_removed,
                 semantic_entries: sem_removed,
-                nodes: 0,
-                edges: 0,
+                nodes: node_removed,
+                edges: edge_removed,
                 skills: sk_removed,
             },
             modified: DiffCounts::default(),
@@ -285,6 +335,8 @@ impl VersionManager for SqliteStore {
                         episode_ids: vec![],
                         semantic_ids: vec![],
                         skill_ids: vec![],
+                        nodes: vec![],
+                        edges: vec![],
                     });
 
                 let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
@@ -301,8 +353,8 @@ impl VersionManager for SqliteStore {
                     stats: SnapshotStats {
                         episodes_count: data.episode_ids.len() as u64,
                         semantic_count: data.semantic_ids.len() as u64,
-                        nodes_count: 0,
-                        edges_count: 0,
+                        nodes_count: data.nodes.len() as u64,
+                        edges_count: data.edges.len() as u64,
                         skills_count: data.skill_ids.len() as u64,
                         size_bytes: size_bytes as u64,
                     },
@@ -475,8 +527,36 @@ fn md5_hash(data: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_core::types::graph::{NodeType, Relation};
     use acp_core::types::semantic::SemanticSource;
-    use acp_core::{Confidence, Layer, MemoryStore, SemanticEntry, StoreEntry};
+    use acp_core::{ContextGraphStore, Confidence, Layer, MemoryStore, SemanticEntry, StoreEntry};
+
+    fn test_node(id: &str, label: &str) -> Node {
+        Node {
+            id: EntryId(id.to_string()),
+            node_type: NodeType::Task,
+            label: label.to_string(),
+            properties: Default::default(),
+            embedding: None,
+            episode_refs: vec![],
+            semantic_refs: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn test_edge(id: &str, source: &str, target: &str) -> Edge {
+        Edge {
+            id: EntryId(id.to_string()),
+            source: EntryId(source.to_string()),
+            target: EntryId(target.to_string()),
+            relation: Relation::LedTo,
+            weight: 1.0,
+            confidence: None,
+            evidence: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
 
     fn semantic(id: &str, content: &str) -> StoreEntry {
         StoreEntry::Semantic(SemanticEntry {
@@ -578,5 +658,97 @@ mod tests {
             })
             .await;
         assert!(matches!(err, Err(AcpError::VersionNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_captures_graph_nodes_and_edges() {
+        let store = SqliteStore::in_memory().unwrap();
+        store.add_node(test_node("n1", "A")).await.unwrap();
+        store.add_node(test_node("n2", "B")).await.unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
+
+        let info = store
+            .snapshot(SnapshotConfig {
+                reason: "graph snap".into(),
+                layers: vec![],
+                tags: vec![],
+                parent: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(info.stats.nodes_count, 2);
+        assert_eq!(info.stats.edges_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_restore_reverts_graph_and_rebuilds_engine() {
+        let store = SqliteStore::in_memory().unwrap();
+        store.add_node(test_node("n1", "A")).await.unwrap();
+        store.add_node(test_node("n2", "B")).await.unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
+
+        let snap = store
+            .snapshot(SnapshotConfig {
+                reason: "before".into(),
+                layers: vec![],
+                tags: vec![],
+                parent: None,
+            })
+            .await
+            .unwrap();
+
+        // Diverge: add a third node.
+        store.add_node(test_node("n3", "C")).await.unwrap();
+        assert_eq!(store.graph_node_count(), 3);
+
+        store.restore(&snap.id).await.unwrap();
+
+        // In-memory engine reflects the restored state.
+        assert_eq!(store.graph_node_count(), 2);
+        assert_eq!(store.graph_edge_count(), 1);
+        assert!(store.graph_read().get_node("n3").is_none());
+        assert!(store.graph_read().get_node("n1").is_some());
+
+        // SQLite matches the engine.
+        let conn = store.conn();
+        let node_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(node_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_diff_counts_graph_nodes_added() {
+        let store = SqliteStore::in_memory().unwrap();
+        store.add_node(test_node("n1", "A")).await.unwrap();
+        store.add_node(test_node("n2", "B")).await.unwrap();
+        store.add_edge(test_edge("e1", "n1", "n2")).await.unwrap();
+
+        let from = store
+            .snapshot(SnapshotConfig {
+                reason: "from".into(),
+                layers: vec![],
+                tags: vec![],
+                parent: None,
+            })
+            .await
+            .unwrap();
+
+        store.add_node(test_node("n3", "C")).await.unwrap();
+
+        let to = store
+            .snapshot(SnapshotConfig {
+                reason: "to".into(),
+                layers: vec![],
+                tags: vec![],
+                parent: None,
+            })
+            .await
+            .unwrap();
+
+        let diff = store.diff(&from.id, &to.id).await.unwrap();
+        assert_eq!(diff.added.nodes, 1);
+        assert_eq!(diff.removed.nodes, 0);
     }
 }
