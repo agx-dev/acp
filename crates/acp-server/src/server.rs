@@ -89,14 +89,77 @@ fn create_embedding_provider(
         }
         #[cfg(not(feature = "openai"))]
         "openai" => Err(AcpError::Internal(
-            "OpenAI embeddings require the 'openai' feature flag. \
-             Rebuild with: cargo build --features openai"
-                .into(),
+            "openai provider not compiled in; rebuild with --features openai".into(),
         )),
         _ => {
             tracing::info!("Using mock embedding provider (384 dimensions)");
             let mock = MockEmbeddings::new(384);
             Ok(Box::new(CachedProvider::new(Box::new(mock), 10_000)))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn mock_provider_is_selected_and_works() {
+        let provider = create_embedding_provider("mock", None, "text-embedding-3-small")
+            .expect("mock provider must always be available");
+        assert_eq!(provider.model_id(), "mock-embeddings");
+        assert_eq!(provider.dimensions(), 384);
+
+        // The selected provider is fully functional (deterministic mock).
+        let emb = provider.embed("hello").await.unwrap();
+        assert_eq!(emb.len(), 384);
+    }
+
+    #[test]
+    fn unknown_provider_falls_back_to_mock() {
+        let provider = create_embedding_provider("something-else", None, "ignored")
+            .expect("unknown provider name must fall back to mock");
+        assert_eq!(provider.model_id(), "mock-embeddings");
+    }
+
+    #[test]
+    #[cfg(not(feature = "openai"))]
+    fn openai_without_feature_returns_clear_error() {
+        let result =
+            create_embedding_provider("openai", Some("sk-dummy"), "text-embedding-3-small");
+        match result {
+            Err(AcpError::Internal(msg)) => {
+                assert!(
+                    msg.contains("openai provider not compiled in"),
+                    "unexpected error message: {msg}"
+                );
+                assert!(msg.contains("--features openai"), "message should tell how to fix it");
+            }
+            Err(other) => panic!("expected AcpError::Internal, got {other:?}"),
+            Ok(_) => panic!("openai must fail when the feature is not compiled in"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "openai")]
+    fn openai_with_feature_and_dummy_key_constructs_without_network() {
+        // Construction must succeed with a dummy key; no API call is made here.
+        let provider =
+            create_embedding_provider("openai", Some("sk-dummy"), "text-embedding-3-small")
+                .expect("openai provider should construct with a dummy key");
+        assert_eq!(provider.model_id(), "text-embedding-3-small");
+        assert_eq!(provider.dimensions(), 1536);
+    }
+
+    #[test]
+    #[cfg(feature = "openai")]
+    fn openai_with_feature_but_no_key_errors() {
+        // Ensure no ambient env var leaks a key into this test.
+        std::env::remove_var("OPENAI_API_KEY");
+        let result = create_embedding_provider("openai", None, "text-embedding-3-small");
+        assert!(
+            matches!(result, Err(AcpError::Internal(_))),
+            "openai without a key must fail with Internal error"
+        );
     }
 }
