@@ -210,14 +210,18 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = acp_server::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 22);
+        assert_eq!(tools.len(), 27);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
         assert!(names.contains(&"acp_context"));
         assert!(names.contains(&"acp_graph_traverse"));
+        assert!(names.contains(&"acp_graph_merge"));
         assert!(names.contains(&"acp_graph_remove_node"));
         assert!(names.contains(&"acp_graph_remove_edge"));
+        assert!(names.contains(&"acp_version_branch"));
+        assert!(names.contains(&"acp_version_merge"));
+        assert!(names.contains(&"acp_exchange_share"));
         assert!(names.contains(&"acp_skill_register"));
         assert!(names.contains(&"acp_skill_get"));
         assert!(names.contains(&"acp_skill_list"));
@@ -232,6 +236,7 @@ mod tests {
         assert!(names.contains(&"acp_exchange_export"));
         assert!(names.contains(&"acp_exchange_import"));
         assert!(names.contains(&"acp_memory_prune"));
+        assert!(names.contains(&"acp_memory_consolidate"));
         assert!(names.contains(&"acp_capabilities"));
         assert!(names.contains(&"acp_health"));
     }
@@ -273,7 +278,7 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 22);
+        assert_eq!(tools.len(), 27);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
@@ -284,6 +289,7 @@ mod tests {
         assert!(names.contains(&"acp_exchange_export"));
         assert!(names.contains(&"acp_exchange_import"));
         assert!(names.contains(&"acp_memory_prune"));
+        assert!(names.contains(&"acp_memory_consolidate"));
         assert!(names.contains(&"acp_capabilities"));
         assert!(names.contains(&"acp_health"));
     }

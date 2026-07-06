@@ -306,6 +306,24 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
             }
         }),
         json!({
+            "name": "acp_memory_consolidate",
+            "description": "Consolidate episodic memories into semantic knowledge. Promotes high-importance episodes to the semantic layer.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Only consolidate episodes from this session (optional, omit for all sessions)"
+                    },
+                    "min_importance": {
+                        "type": "number",
+                        "description": "Minimum importance threshold (0.0-1.0, default 0.5)"
+                    }
+                },
+                "required": []
+            }
+        }),
+        json!({
             "name": "acp_memory_prune",
             "description": "Prune old or low-importance memories according to retention policy. Removes expired episodes, low-importance semantic entries, and orphan graph nodes.",
             "inputSchema": {
@@ -331,6 +349,92 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
                         }
                     }
                 }
+            }
+        }),
+        json!({
+            "name": "acp_graph_merge",
+            "description": "Merge an external context graph (e.g. from a peer agent) into the local graph, with a conflict strategy and optional namespace.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "external_graph": {
+                        "type": "object",
+                        "properties": {
+                            "nodes": { "type": "array", "items": { "type": "object" } },
+                            "edges": { "type": "array", "items": { "type": "object" } }
+                        },
+                        "description": "The nodes and edges to merge in"
+                    },
+                    "conflict_strategy": {
+                        "type": "string",
+                        "enum": ["prefer_local", "prefer_remote"],
+                        "description": "Which side wins on id collision",
+                        "default": "prefer_local"
+                    },
+                    "namespace": {
+                        "type": "string",
+                        "description": "Optional prefix applied to incoming ids to avoid collisions"
+                    }
+                },
+                "required": ["external_graph"]
+            }
+        }),
+        json!({
+            "name": "acp_version_branch",
+            "description": "Create a named branch of cognitive state from a snapshot. Omit from_version to branch from the current state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Branch name" },
+                    "from_version": { "type": "string", "description": "Snapshot id or version to branch from (optional)" }
+                },
+                "required": ["name"]
+            }
+        }),
+        json!({
+            "name": "acp_version_merge",
+            "description": "Merge a branch back into the main line. prefer_branch adopts the branch state; prefer_main keeps the current state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "branch": { "type": "string", "description": "Branch name to merge" },
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["prefer_branch", "prefer_main"],
+                        "description": "Conflict resolution strategy",
+                        "default": "prefer_branch"
+                    }
+                },
+                "required": ["branch"]
+            }
+        }),
+        json!({
+            "name": "acp_exchange_share",
+            "description": "Selectively share memory layers with another agent, filtered by tags, with a granted access level. Produces a share manifest.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "recipient": { "type": "string", "description": "Recipient agent id/urn" },
+                    "layers": {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["episodic", "semantic", "graph", "procedural", "all"] },
+                        "description": "Layers to share (default: all)"
+                    },
+                    "filter": {
+                        "type": "object",
+                        "properties": {
+                            "tags": { "type": "array", "items": { "type": "string" } }
+                        },
+                        "description": "Optional tag filter applied to episodic/semantic entries"
+                    },
+                    "access_level": {
+                        "type": "string",
+                        "enum": ["read_only", "read_write"],
+                        "description": "Access granted to the recipient",
+                        "default": "read_only"
+                    }
+                },
+                "required": ["recipient"]
             }
         }),
     ]

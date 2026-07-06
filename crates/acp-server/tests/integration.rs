@@ -811,3 +811,162 @@ async fn test_store_semantic_generates_embedding() {
     assert_eq!(recalled["entries"][0]["id"], id);
     assert_eq!(recalled["entries"][0]["has_embedding"], true);
 }
+
+#[tokio::test]
+async fn test_memory_consolidation() {
+    let srv = TestServer::in_memory();
+
+    // Store episodic memories from a session
+    for i in 0..5 {
+        srv.tool_call("acp_store", json!({
+            "content": format!("Learned fact {} about Rust ownership", i),
+            "layer": "episodic",
+            "role": "agent",
+            "session_id": "session-consolidate",
+            "importance": 0.8
+        })).await;
+    }
+
+    // Before consolidation: no semantic entries
+    let stats_before = srv.call("acp.memory.stats", serde_json::Value::Null).await;
+    assert_eq!(stats_before["semantic"], 0);
+
+    // Consolidate session
+    let result = srv.call("acp.memory.consolidate", json!({
+        "session_id": "session-consolidate",
+        "min_importance": 0.5
+    })).await;
+
+    assert!(result["consolidated"].as_u64().unwrap() > 0);
+    assert_eq!(result["source"], "episodic");
+    assert_eq!(result["target"], "semantic");
+
+    // After consolidation: semantic entries created
+    let stats_after = srv.call("acp.memory.stats", serde_json::Value::Null).await;
+    assert!(stats_after["semantic"].as_u64().unwrap() > 0);
+}
+
+// ── Spec conformance: canonical context.* naming + new operations ──────
+
+#[tokio::test]
+async fn test_context_canonical_namespace_works() {
+    let srv = TestServer::in_memory();
+
+    // The spec namespace is acp.context.*; it must be accepted.
+    srv.call("acp.context.add_node", json!({
+        "id": "c1", "node_type": "task", "label": "Canonical",
+        "properties": {}, "episode_refs": [], "semantic_refs": [],
+        "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+    })).await;
+
+    // The legacy acp.graph.* alias must still work for back-compat.
+    srv.call("acp.graph.add_node", json!({
+        "id": "c2", "node_type": "tool", "label": "Legacy",
+        "properties": {}, "episode_refs": [], "semantic_refs": [],
+        "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+    })).await;
+
+    // Capabilities must advertise the canonical context.* names, not graph.*
+    let caps = srv.call("acp.capabilities", Value::Null).await;
+    let names: Vec<&str> = caps["methods"].as_array().unwrap()
+        .iter().filter_map(|m| m["method"].as_str()).collect();
+    assert!(names.contains(&"acp.context.add_node"), "canonical name advertised");
+    assert!(names.contains(&"acp.context.merge"));
+    assert!(names.contains(&"acp.exchange.share"));
+    assert!(names.contains(&"acp.version.branch"));
+    assert!(names.contains(&"acp.version.merge"));
+    assert!(!names.iter().any(|n| n.starts_with("acp.graph.")), "graph.* not advertised");
+}
+
+#[tokio::test]
+async fn test_context_merge_end_to_end() {
+    let srv = TestServer::in_memory();
+
+    srv.call("acp.context.add_node", json!({
+        "id": "local", "node_type": "task", "label": "Local",
+        "properties": {}, "episode_refs": [], "semantic_refs": [],
+        "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+    })).await;
+
+    let node = |id: &str, label: &str| json!({
+        "id": id, "node_type": "task", "label": label,
+        "properties": {}, "episode_refs": [], "semantic_refs": [],
+        "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+    });
+
+    let report = srv.call("acp.context.merge", json!({
+        "external_graph": {
+            "nodes": [node("n1", "Peer A"), node("n2", "Peer B")],
+            "edges": [{
+                "id": "pe1", "source": "n1", "target": "n2",
+                "relation": "led_to", "weight": 1.0,
+                "created_at": "2025-01-01T00:00:00Z"
+            }]
+        },
+        "conflict_strategy": "prefer_local",
+        "namespace": "peer"
+    })).await;
+
+    assert_eq!(report["nodes_added"], 2);
+    assert_eq!(report["edges_added"], 1);
+}
+
+#[tokio::test]
+async fn test_version_branch_and_merge_end_to_end() {
+    let srv = TestServer::in_memory();
+
+    srv.call("acp.memory.store", json!({ "content": "base fact" })).await;
+
+    let branch = srv.call("acp.version.branch", json!({ "name": "experiment" })).await;
+    assert_eq!(branch["name"], "experiment");
+    assert!(branch["head_snapshot"].as_str().unwrap().starts_with("snap-"));
+
+    // Diverge on main.
+    srv.call("acp.memory.store", json!({ "content": "divergent fact" })).await;
+
+    let report = srv.call("acp.version.merge", json!({
+        "branch": "experiment",
+        "strategy": "prefer_branch"
+    })).await;
+    assert_eq!(report["branch"], "experiment");
+    assert_eq!(report["merged"]["semantic_entries"], 1);
+
+    // Adopting the branch dropped the divergent fact.
+    let stats = srv.call("acp.memory.stats", Value::Null).await;
+    assert_eq!(stats["semantic"], 1);
+}
+
+#[tokio::test]
+async fn test_exchange_share_filters_by_layer_and_tag() {
+    let srv = TestServer::in_memory();
+
+    srv.call("acp.memory.store", json!({
+        "content": "shareable arch note", "tags": ["architecture"], "importance": 0.9
+    })).await;
+    srv.call("acp.memory.store", json!({
+        "content": "private note", "tags": ["secret"], "importance": 0.9
+    })).await;
+
+    let manifest = srv.call("acp.exchange.share", json!({
+        "recipient": "urn:acp:agent:peer-1",
+        "layers": ["semantic"],
+        "filter": { "tags": ["architecture"] },
+        "access_level": "read_only"
+    })).await;
+
+    assert_eq!(manifest["recipient"], "urn:acp:agent:peer-1");
+    assert_eq!(manifest["access_level"], "read_only");
+    assert_eq!(manifest["counts"]["semantic_entries"], 1);
+    // Only the architecture-tagged entry is shared.
+    let entries = manifest["bundle"]["semantic_entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0]["content"].as_str().unwrap().contains("arch note"));
+    assert!(manifest["share_id"].as_str().unwrap().starts_with("share-"));
+}
+
+#[tokio::test]
+async fn test_exchange_share_requires_recipient() {
+    let srv = TestServer::in_memory();
+    let resp = srv.call_raw("acp.exchange.share", json!({ "layers": ["semantic"] })).await;
+    assert!(resp.error.is_some());
+}

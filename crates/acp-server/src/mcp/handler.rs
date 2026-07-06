@@ -29,13 +29,25 @@ impl AcpServer {
             "acp.memory.forget" => self.handle_memory_forget(&request.params).await,
             "acp.memory.stats" => self.handle_memory_stats().await,
             "acp.memory.prune" => self.handle_memory_prune(&request.params).await,
+            "acp.memory.consolidate" => self.handle_memory_consolidate(&request.params).await,
 
-            // Canonical names (spec)
+            // Canonical `acp.context.*` names (spec)
+            "acp.context.add_node" => self.handle_context_add_node(request.params).await,
+            "acp.context.add_edge" => self.handle_context_add_edge(request.params).await,
+            "acp.context.query" => self.handle_context_query(request.params).await,
+            "acp.context.subgraph" => self.handle_context_subgraph(&request.params).await,
+            "acp.context.traverse" => self.handle_graph_traverse(&request.params).await,
+            "acp.context.merge" => self.handle_context_merge(&request.params).await,
+            "acp.context.remove_node" => self.handle_graph_remove_node(&request.params).await,
+            "acp.context.remove_edge" => self.handle_graph_remove_edge(&request.params).await,
+
+            // Legacy `acp.graph.*` aliases (accepted, not advertised)
             "acp.graph.add_node" => self.handle_context_add_node(request.params).await,
             "acp.graph.add_edge" => self.handle_context_add_edge(request.params).await,
             "acp.graph.query" => self.handle_context_query(request.params).await,
             "acp.graph.subgraph" => self.handle_context_subgraph(&request.params).await,
             "acp.graph.traverse" => self.handle_graph_traverse(&request.params).await,
+            "acp.graph.merge" => self.handle_context_merge(&request.params).await,
             "acp.graph.remove_node" => self.handle_graph_remove_node(&request.params).await,
             "acp.graph.remove_edge" => self.handle_graph_remove_edge(&request.params).await,
 
@@ -53,10 +65,13 @@ impl AcpServer {
             "acp.version.restore" => self.handle_version_restore(&request.params).await,
             "acp.version.diff" => self.handle_version_diff(&request.params).await,
             "acp.version.list" => self.handle_version_list().await,
+            "acp.version.branch" => self.handle_version_branch(&request.params).await,
+            "acp.version.merge" => self.handle_version_merge(&request.params).await,
 
             // ── Exchange methods ────────────────────────────────
             "acp.exchange.export" => self.handle_exchange_export().await,
             "acp.exchange.import" => self.handle_exchange_import(&request.params).await,
+            "acp.exchange.share" => self.handle_exchange_share(&request.params).await,
 
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
@@ -136,9 +151,11 @@ impl AcpServer {
                 self.handle_context_subgraph(arguments).await
             }
             "acp_graph_traverse" => self.handle_graph_traverse(arguments).await,
+            "acp_graph_merge" => self.handle_context_merge(arguments).await,
             "acp_graph_remove_node" => self.handle_graph_remove_node(arguments).await,
             "acp_graph_remove_edge" => self.handle_graph_remove_edge(arguments).await,
             "acp_memory_prune" => self.handle_memory_prune(arguments).await,
+            "acp_memory_consolidate" => self.handle_memory_consolidate(arguments).await,
             "acp_skill_register" => self.handle_skill_register(arguments).await,
             "acp_skill_get" => self.handle_skill_get(arguments).await,
             "acp_skill_list" => self.handle_skill_list().await,
@@ -150,8 +167,11 @@ impl AcpServer {
             "acp_version_restore" => self.handle_version_restore(arguments).await,
             "acp_version_diff" => self.handle_version_diff(arguments).await,
             "acp_version_list" => self.handle_version_list().await,
+            "acp_version_branch" => self.handle_version_branch(arguments).await,
+            "acp_version_merge" => self.handle_version_merge(arguments).await,
             "acp_exchange_export" => self.handle_exchange_export().await,
             "acp_exchange_import" => self.handle_exchange_import(arguments).await,
+            "acp_exchange_share" => self.handle_exchange_share(arguments).await,
             "acp_capabilities" => self.handle_capabilities().await,
             "acp_health" => self.handle_health().await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
@@ -400,6 +420,17 @@ impl AcpServer {
         }))
     }
 
+    async fn handle_memory_consolidate(&self, params: &Value) -> Result<Value, AcpError> {
+        let config: ConsolidationConfig = if params.is_null() {
+            Default::default()
+        } else {
+            serde_json::from_value(params.clone())
+                .map_err(|e| AcpError::InvalidParams(e.to_string()))?
+        };
+        let result = self.store.consolidate(config).await?;
+        serde_json::to_value(&result).map_err(|e| AcpError::Internal(e.to_string()))
+    }
+
     // ── ACP Context Graph Handlers ────────────────────────────
 
     async fn handle_context_add_node(&self, params: Value) -> Result<Value, AcpError> {
@@ -473,6 +504,14 @@ impl AcpServer {
             .ok_or(AcpError::InvalidParams("Missing id".into()))?;
         self.store.remove_edge(&EntryId(id.to_string())).await?;
         Ok(json!({ "removed": true }))
+    }
+
+    async fn handle_context_merge(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let req: types::graph::GraphMergeRequest = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let report = self.store.merge_graph(req).await?;
+        serde_json::to_value(&report).map_err(|e| AcpError::Internal(e.to_string()))
     }
 
     // ── ACP Skill Handlers ──────────────────────────────────
@@ -575,6 +614,22 @@ impl AcpServer {
         Ok(json!({ "snapshots": value, "total": snapshots.len() }))
     }
 
+    async fn handle_version_branch(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let config: types::version::BranchConfig = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let info = self.store.branch(config).await?;
+        serde_json::to_value(&info).map_err(|e| AcpError::Internal(e.to_string()))
+    }
+
+    async fn handle_version_merge(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+        let req: types::version::BranchMergeRequest = serde_json::from_value(params.clone())
+            .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+        let report = self.store.merge_branch(req).await?;
+        serde_json::to_value(&report).map_err(|e| AcpError::Internal(e.to_string()))
+    }
+
     // ── ACP Exchange Handlers ────────────────────────────────
 
     async fn handle_exchange_export(&self) -> Result<Value, AcpError> {
@@ -641,6 +696,109 @@ impl AcpServer {
                 "skills": skill_count,
             }
         }))
+    }
+
+    async fn handle_exchange_share(&self, params: &Value) -> Result<Value, AcpError> {
+        let params = require_params(params)?;
+
+        let recipient = params["recipient"]
+            .as_str()
+            .ok_or(AcpError::InvalidParams("Missing recipient".into()))?
+            .to_string();
+
+        // Resolve requested layers ("all" expands to every layer).
+        let requested: Vec<String> = params["layers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let all = requested.is_empty() || requested.iter().any(|l| l == "all");
+        let want = |name: &str| all || requested.iter().any(|l| l == name);
+
+        let filter_tags: Vec<String> = params["filter"]["tags"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let access_level: acp_core::AccessLevel = params
+            .get("access_level")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let tag_match = |tags: &[String]| filter_tags.is_empty() || tags.iter().any(|t| filter_tags.contains(t));
+
+        // Episodic
+        let episodes: Vec<_> = if want("episodic") {
+            self.store
+                .export_all_episodes()?
+                .into_iter()
+                .filter(|e| tag_match(&e.metadata.tags))
+                .collect()
+        } else {
+            vec![]
+        };
+
+        // Semantic
+        let semantic_entries: Vec<_> = if want("semantic") {
+            self.store
+                .export_all_semantic()?
+                .into_iter()
+                .filter(|e| tag_match(&e.tags))
+                .collect()
+        } else {
+            vec![]
+        };
+
+        // Graph
+        let (nodes, edges) = if want("graph") {
+            let g = self.store.engine_export();
+            (g.nodes, g.edges)
+        } else {
+            (vec![], vec![])
+        };
+
+        // Procedural (skills carry no tags; shared wholesale when the layer is requested)
+        let skills = if want("procedural") {
+            SkillRegistry::list(&self.store).await?
+        } else {
+            vec![]
+        };
+
+        let counts = acp_core::ShareCounts {
+            episodes: episodes.len() as u64,
+            semantic_entries: semantic_entries.len() as u64,
+            nodes: nodes.len() as u64,
+            edges: edges.len() as u64,
+            skills: skills.len() as u64,
+        };
+
+        let manifest = acp_core::ShareManifest {
+            share_id: EntryId::new("share").0,
+            recipient,
+            access_level,
+            layers: requested,
+            filter_tags,
+            counts,
+            bundle: AgentBundle {
+                identity: AgentIdentity::new("acp-agent", ConformanceLevel::Full),
+                episodes,
+                semantic_entries,
+                nodes,
+                edges,
+                skills,
+                snapshots: vec![],
+            },
+            created_at: chrono::Utc::now(),
+        };
+
+        serde_json::to_value(&manifest).map_err(|e| AcpError::Internal(e.to_string()))
     }
 
     async fn handle_skill_resolve(&self, params: &Value) -> Result<Value, AcpError> {
