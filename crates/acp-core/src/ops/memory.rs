@@ -23,6 +23,9 @@ pub trait MemoryStore: Send + Sync {
 
     /// Get memory statistics.
     async fn stats(&self, layers: &[Layer]) -> Result<MemoryStats, AcpError>;
+
+    /// Consolidate high-importance episodes into the semantic layer.
+    async fn consolidate(&self, config: ConsolidationConfig) -> Result<ConsolidationResult, AcpError>;
 }
 
 /// Entry to store — union of possible entry types.
@@ -81,6 +84,26 @@ pub struct RecallEntry {
     #[serde(default)]
     pub has_embedding: bool,
     pub metadata: Option<serde_json::Value>,
+}
+
+/// Configuration for consolidating episodic memories into semantic entries.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConsolidationConfig {
+    /// Only consolidate episodes from this session (None = all sessions).
+    pub session_id: Option<String>,
+    /// Minimum episode importance to consolidate (default 0.5).
+    #[serde(default = "default_consolidation_min_importance")]
+    pub min_importance: f64,
+}
+
+fn default_consolidation_min_importance() -> f64 { 0.5 }
+
+/// Result of a consolidation operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsolidationResult {
+    pub consolidated: u64,
+    pub source: String,
+    pub target: String,
 }
 
 /// Memory statistics.

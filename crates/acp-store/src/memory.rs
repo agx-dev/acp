@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use rusqlite::params;
 
-use acp_core::ops::memory::LayerStats;
+use acp_core::ops::memory::{ConsolidationConfig, ConsolidationResult, LayerStats};
 use acp_core::types::retention::ForgetStrategy;
 use acp_core::{
-    AcpError, EntryId, Episode, Layer, MemoryStats, MemoryStore, RecallEntry, RecallQuery,
-    RecallResult, SemanticEntry, SkillObject, StoreEntry,
+    AcpError, Confidence, EntryId, Episode, Layer, MemoryStats, MemoryStore, RecallEntry,
+    RecallQuery, RecallResult, SemanticEntry, SkillObject, StoreEntry,
 };
 
 use crate::store::SqliteStore;
@@ -307,6 +307,74 @@ impl MemoryStore for SqliteStore {
         }
 
         Ok(stats)
+    }
+
+    async fn consolidate(&self, config: ConsolidationConfig) -> Result<ConsolidationResult, AcpError> {
+        struct EpisodeRow {
+            content: String,
+            importance: f64,
+        }
+
+        // Collect episodes in a scoped block so the connection guard is
+        // released before `store_semantic` re-locks it below. Holding it
+        // across the loop would deadlock the non-reentrant Mutex.
+        let rows: Vec<EpisodeRow> = {
+            let conn = self.conn();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT content_text, importance
+                     FROM episodes
+                     WHERE deleted_at IS NULL
+                     AND (?1 IS NULL OR session_id = ?1)
+                     AND COALESCE(importance, 0.5) >= ?2",
+                )
+                .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+            let collected = stmt
+                .query_map(
+                    rusqlite::params![config.session_id, config.min_importance],
+                    |row| {
+                        Ok(EpisodeRow {
+                            content: row.get::<_, String>(0).unwrap_or_default(),
+                            importance: row.get::<_, f64>(1).unwrap_or(0.5),
+                        })
+                    },
+                )
+                .map_err(|e| AcpError::Internal(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+            collected
+        };
+
+        let mut consolidated: u64 = 0;
+        for row in rows {
+            let entry = SemanticEntry {
+                id: EntryId::new("sem"),
+                content: row.content,
+                embedding: None,
+                source: acp_core::types::semantic::SemanticSource::Consolidated,
+                confidence: Confidence::new(0.8).unwrap(),
+                importance: row.importance,
+                access_count: 0,
+                last_accessed: None,
+                tags: vec![],
+                category: None,
+                domain: None,
+                protected: false,
+                decay_rate: 0.01,
+                provenance: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            };
+            self.store_semantic(entry)?;
+            consolidated += 1;
+        }
+
+        Ok(ConsolidationResult {
+            consolidated,
+            source: "episodic".into(),
+            target: "semantic".into(),
+        })
     }
 }
 
