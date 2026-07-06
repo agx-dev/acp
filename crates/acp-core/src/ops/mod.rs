@@ -5,7 +5,12 @@ pub mod skills;
 pub mod versioning;
 
 pub use context::ContextGraphStore;
-pub use exchange::{AgentBundle, Exchange};
-pub use memory::{MemoryStats, MemoryStore, RecallEntry, RecallQuery, RecallResult, StoreEntry};
+pub use exchange::{
+    AccessLevel, AgentBundle, Exchange, ShareCounts, ShareFilter, ShareManifest,
+};
+pub use memory::{
+    ConsolidationConfig, ConsolidationResult, MemoryStats, MemoryStore, RecallEntry, RecallQuery,
+    RecallResult, StoreEntry,
+};
 pub use skills::SkillRegistry;
 pub use versioning::VersionManager;

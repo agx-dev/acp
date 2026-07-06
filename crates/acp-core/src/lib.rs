@@ -17,8 +17,9 @@ pub use types::*;
 
 // Re-export all ops traits.
 pub use ops::{
-    AgentBundle, ContextGraphStore, Exchange, MemoryStats, MemoryStore, RecallEntry, RecallQuery,
-    RecallResult, SkillRegistry, StoreEntry, VersionManager,
+    AccessLevel, AgentBundle, ConsolidationConfig, ConsolidationResult, ContextGraphStore,
+    Exchange, MemoryStats, MemoryStore, RecallEntry, RecallQuery, RecallResult, ShareCounts,
+    ShareFilter, ShareManifest, SkillRegistry, StoreEntry, VersionManager,
 };
 
 // Re-export protocol items.

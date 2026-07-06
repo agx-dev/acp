@@ -92,3 +92,45 @@ pub struct GraphPattern {
     pub properties: Option<HashMap<String, serde_json::Value>>,
     pub max_results: Option<usize>,
 }
+
+/// How to resolve conflicts when merging an external graph (`acp.context.merge`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictStrategy {
+    /// Keep the local node/edge on id collision (default).
+    #[default]
+    PreferLocal,
+    /// Overwrite the local node/edge with the incoming one on id collision.
+    PreferRemote,
+}
+
+/// An external graph to merge in, typically produced by another agent (A2A).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExternalGraph {
+    #[serde(default)]
+    pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub edges: Vec<Edge>,
+}
+
+/// Request for `acp.context.merge`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphMergeRequest {
+    pub external_graph: ExternalGraph,
+    #[serde(default)]
+    pub conflict_strategy: ConflictStrategy,
+    /// Optional namespace prefix applied to incoming ids to avoid collisions.
+    #[serde(default)]
+    pub namespace: Option<String>,
+}
+
+/// Outcome of a graph merge.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct GraphMergeReport {
+    pub nodes_added: u64,
+    pub nodes_overwritten: u64,
+    pub nodes_skipped: u64,
+    pub edges_added: u64,
+    pub edges_skipped: u64,
+    pub conflict_strategy: ConflictStrategy,
+}

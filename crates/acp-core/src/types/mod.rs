@@ -14,8 +14,14 @@ pub use episode::{
     Episode, EpisodeContent, EpisodeContext, EpisodeMetadata, EpisodeType, Outcome, OutcomeStatus,
     Role, Trigger,
 };
-pub use graph::{Edge, GraphPattern, Node, NodeType, Relation, SubGraph};
+pub use graph::{
+    ConflictStrategy, Edge, ExternalGraph, GraphMergeReport, GraphMergeRequest, GraphPattern, Node,
+    NodeType, Relation, SubGraph,
+};
 pub use retention::{EvictionStrategy, ForgetStrategy, PruneReport, RetentionPolicy};
 pub use semantic::{Provenance, SemanticEntry, SemanticSource};
 pub use skill::{PortableSkill, SkillContext, SkillInvocationResult, SkillMatch, SkillObject};
-pub use version::{SnapshotConfig, SnapshotInfo, VersionDiff};
+pub use version::{
+    BranchConfig, BranchInfo, BranchMergeReport, BranchMergeRequest, MergeStrategy, SnapshotConfig,
+    SnapshotInfo, VersionDiff,
+};
