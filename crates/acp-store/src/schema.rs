@@ -242,6 +242,23 @@ CREATE TABLE IF NOT EXISTS branches (
 );
 
 -- =========================================================================
+-- 5c. AUDIT TRAIL (spec §11.4 — append-only)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id              TEXT PRIMARY KEY,
+    timestamp       TEXT NOT NULL,
+    event           TEXT NOT NULL,
+    actor           TEXT NOT NULL,
+    method          TEXT NOT NULL,
+    details         TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_log(event);
+
+-- =========================================================================
 -- 6. METADATA
 -- =========================================================================
 

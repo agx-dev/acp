@@ -3,6 +3,7 @@
 //! Implements `acp-core` traits using embedded SQLite.
 //! Zero external dependencies — SQLite is bundled at compile time.
 
+pub mod audit;
 mod exchange;
 mod graph;
 mod memory;
