@@ -191,6 +191,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_audit_entry_created_for_audited_method() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // A store is an audited event (spec §11.4).
+        let store_resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.store".into(),
+                params: json!({ "content": "auditable knowledge" }),
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(store_resp.error.is_none());
+
+        // A recall is also audited.
+        let _ = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.recall".into(),
+                params: json!({ "query": "auditable", "layers": ["semantic"] }),
+                id: Some(json!(2)),
+            })
+            .await;
+
+        // Read the audit trail back via the store.
+        let entries = srv.store.query_audit(10, None).unwrap();
+        assert_eq!(entries.len(), 2);
+        let events: Vec<&str> = entries.iter().map(|e| e.event.as_str()).collect();
+        assert!(events.contains(&"memory.store"));
+        assert!(events.contains(&"memory.recall"));
+
+        // Filter works.
+        let stores = srv.store.query_audit(10, Some("memory.store")).unwrap();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].actor, "agent:local");
+        assert_eq!(stores[0].method, "acp.memory.store");
+    }
+
+    #[tokio::test]
+    async fn test_failed_method_is_not_audited() {
+        let srv = AcpServer::in_memory().unwrap();
+
+        // Missing `content` -> InvalidParams error; must NOT be audited.
+        let resp = srv
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "acp.memory.store".into(),
+                params: json!({}),
+                id: Some(json!(1)),
+            })
+            .await;
+        assert!(resp.error.is_some());
+
+        let entries = srv.store.query_audit(10, None).unwrap();
+        assert_eq!(entries.len(), 0);
+    }
+
+    #[tokio::test]
     async fn test_stats_empty() {
         let srv = AcpServer::in_memory().unwrap();
         let resp = srv
@@ -210,8 +268,9 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = acp_server::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 27);
+        assert_eq!(tools.len(), 28);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"acp_exchange_sync"));
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
         assert!(names.contains(&"acp_context"));
@@ -278,7 +337,7 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 27);
+        assert_eq!(tools.len(), 28);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));

@@ -6,7 +6,8 @@ pub mod versioning;
 
 pub use context::ContextGraphStore;
 pub use exchange::{
-    AccessLevel, AgentBundle, Exchange, ShareCounts, ShareFilter, ShareManifest,
+    AccessLevel, AgentBundle, Exchange, ShareCounts, ShareFilter, ShareManifest, SyncCounts,
+    SyncDirection, SyncReport,
 };
 pub use memory::{
     ConsolidationConfig, ConsolidationResult, MemoryStats, MemoryStore, RecallEntry, RecallQuery,

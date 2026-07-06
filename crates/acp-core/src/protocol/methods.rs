@@ -43,6 +43,8 @@ pub enum AcpMethod {
     ExchangeExport,
     ExchangeImport,
     ExchangeShare,
+    // Bidirectional sync (Full, optional/PEUT)
+    ExchangeSync,
 
     // Spec / introspection (Core)
     Capabilities,
@@ -98,6 +100,7 @@ impl AcpMethod {
             "acp.exchange.export" => Some(Self::ExchangeExport),
             "acp.exchange.import" => Some(Self::ExchangeImport),
             "acp.exchange.share" => Some(Self::ExchangeShare),
+            "acp.exchange.sync" => Some(Self::ExchangeSync),
 
             "acp.capabilities" => Some(Self::Capabilities),
             "acp.health" => Some(Self::Health),
@@ -143,6 +146,7 @@ impl AcpMethod {
             Self::ExchangeExport => "acp.exchange.export",
             Self::ExchangeImport => "acp.exchange.import",
             Self::ExchangeShare => "acp.exchange.share",
+            Self::ExchangeSync => "acp.exchange.sync",
 
             Self::Capabilities => "acp.capabilities",
             Self::Health => "acp.health",
@@ -159,7 +163,7 @@ impl AcpMethod {
             SkillRegister, SkillResolve, SkillGet, SkillUpdate, SkillExport, SkillList,
             SkillInvoke,
             VersionSnapshot, VersionRestore, VersionDiff, VersionList, VersionBranch, VersionMerge,
-            ExchangeExport, ExchangeImport, ExchangeShare,
+            ExchangeExport, ExchangeImport, ExchangeShare, ExchangeSync,
             Capabilities, Health,
         ]
     }
@@ -201,7 +205,8 @@ impl AcpMethod {
             | Self::SkillInvoke
             | Self::GraphMerge
             | Self::VersionBranch
-            | Self::VersionMerge => Full,
+            | Self::VersionMerge
+            | Self::ExchangeSync => Full,
         }
     }
 }
@@ -286,5 +291,17 @@ mod tests {
             assert_eq!(m.as_str(), s);
             assert_eq!(m.conformance(), level, "conformance {}", s);
         }
+    }
+
+    #[test]
+    fn exchange_sync_parses_and_roundtrips() {
+        use crate::types::ConformanceLevel::*;
+        let m = AcpMethod::parse("acp.exchange.sync").expect("acp.exchange.sync");
+        assert_eq!(m, AcpMethod::ExchangeSync);
+        assert_eq!(m.as_str(), "acp.exchange.sync");
+        assert_eq!(m.conformance(), Full);
+        // Present in the canonical listing and round-trips.
+        assert!(AcpMethod::all().contains(&AcpMethod::ExchangeSync));
+        assert_eq!(AcpMethod::parse(m.as_str()), Some(m));
     }
 }

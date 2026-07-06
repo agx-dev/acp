@@ -37,11 +37,11 @@ The server speaks MCP protocol (stdio transport). Configured in `.mcp.json`:
 ```
 
 MCP methods implemented: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`
-Tools exposed: 27 tools — memory (`acp_recall`, `acp_store`, `acp_memory_prune`, `acp_memory_consolidate`), graph (`acp_context`, `acp_graph_traverse`, `acp_graph_merge`, `acp_graph_remove_node`, `acp_graph_remove_edge`), skills (`acp_skill_*`), versions (`acp_version_snapshot|restore|diff|list|branch|merge`), exchange (`acp_exchange_export|import|share`), meta (`acp_capabilities`, `acp_health`)
+Tools exposed: 28 tools — memory (`acp_recall`, `acp_store`, `acp_memory_prune`, `acp_memory_consolidate`), graph (`acp_context`, `acp_graph_traverse`, `acp_graph_merge`, `acp_graph_remove_node`, `acp_graph_remove_edge`), skills (`acp_skill_*`), versions (`acp_version_snapshot|restore|diff|list|branch|merge`), exchange (`acp_exchange_export|import|share|sync`), meta (`acp_capabilities`, `acp_health`)
 
 ## Protocol Methods (AcpMethod enum)
 
-32 methods defined in `acp-core/src/protocol/methods.rs`, all wired to the handler and store. Grouped by conformance level:
+33 methods defined in `acp-core/src/protocol/methods.rs`, all wired to the handler and store. Grouped by conformance level:
 
 ### Wire namespace note
 Graph ops use the **`acp.context.*`** namespace (canonical, per spec). The older
@@ -63,17 +63,27 @@ but are NOT advertised in `acp.capabilities`.
 - `acp.skill.register` / `resolve` / `get` / `update` / `export` / `list` / `invoke`
 - `acp.context.merge` — merge external graph with conflict strategy + namespace
 - `acp.version.branch` / `merge` — named branches over the snapshot store
+- `acp.exchange.sync` — bidirectional sync (import peer bundle + return local bundle)
+
+## Cross-cutting
+
+- **Audit trail** (spec §11.4) — `handle_request` wraps `dispatch` and appends a
+  best-effort row to the `audit_log` table for audited events (memory.store/recall/
+  forget/consolidate, skill.invoke, version.snapshot/restore, exchange.share). See
+  `acp-store/src/audit.rs` (`append_audit` / `query_audit`). Non-fatal on failure.
+- **Snapshots version the graph** — `SnapshotData` captures full nodes/edges;
+  `restore` re-inserts them and rebuilds the in-memory engine; `diff` counts graph deltas.
+- **OpenAI embeddings** — `--embedding-provider openai` + `OPENAI_API_KEY`, compiled
+  with `--features openai` (server crate forwards to `acp-embeddings/openai`). Without
+  the feature, requesting `openai` returns a clear error (no silent fallback).
 
 ## What's Left To Do
 
-Core protocol is complete (32/32 methods wired, full test coverage). Remaining items are enhancements, not gaps:
+Protocol is spec-complete (33/33 methods wired, 132 tests). Remaining items are enhancements, not gaps:
 
-1. **Audit trail** (spec §11.4) — a cross-cutting requirement (`DOIT` log store/recall/forget/share/…). Not yet implemented for ANY operation; would be a dedicated `audit` table + middleware.
-2. **Snapshot node/edge capture** — snapshots currently track episode/semantic/skill ids only; graph nodes/edges are not versioned (nodes_count=0 in `SnapshotStats`).
-3. **True branch isolation** — `version.branch`/`merge` are modeled as named snapshot pointers (adopt-on-merge), not copy-on-write parallel timelines.
-4. **OpenAI embeddings** — provider exists behind the `openai` feature flag; needs `--embedding-provider openai` + `OPENAI_API_KEY`.
-5. **`acp.exchange.sync`** — bidirectional sync (spec: OPTIONNEL/PEUT); not implemented and intentionally not advertised.
-6. **AGX reference implementation** — the `/Users/Apple/SelfProject/AGX` repo is the reference impl that uses ACP.
+1. **True branch isolation** — `version.branch`/`merge` are named snapshot pointers (adopt-on-merge), not copy-on-write parallel timelines.
+2. **Audit query RPC** — the audit trail is written + queryable at the store level (`query_audit`); not yet exposed as an `acp.audit.*` protocol method.
+3. **Snapshot compression** — `compressed_bytes` equals `size_bytes` today (blobs are stored uncompressed).
 
 ## Known Patterns & Pitfalls
 

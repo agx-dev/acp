@@ -970,3 +970,70 @@ async fn test_exchange_share_requires_recipient() {
     let resp = srv.call_raw("acp.exchange.share", json!({ "layers": ["semantic"] })).await;
     assert!(resp.error.is_some());
 }
+
+// ── Bidirectional Sync (acp.exchange.sync) ───────────────
+
+#[tokio::test]
+async fn test_exchange_sync_both_directions_end_to_end() {
+    // Server A holds data; export it to build a peer "remote_bundle".
+    let srv_a = TestServer::in_memory();
+    srv_a.tool_call("acp_store", json!({
+        "content": "Peer knowledge about distributed sync", "importance": 0.9
+    })).await;
+    srv_a.tool_call("acp_store", json!({
+        "content": "User discussed CRDTs", "layer": "episodic",
+        "role": "user", "session_id": "peer-sess"
+    })).await;
+    srv_a.call("acp.context.add_node", json!({
+        "id": "peer-node", "node_type": "knowledge", "label": "Sync",
+        "properties": {}, "episode_refs": [], "semantic_refs": [],
+        "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"
+    })).await;
+
+    let remote_bundle = srv_a.call("acp.exchange.export", Value::Null).await;
+    assert_eq!(remote_bundle["semantic_entries"].as_array().unwrap().len(), 1);
+
+    // Server B is fresh; sync the peer bundle in with direction "both".
+    let srv_b = TestServer::in_memory();
+    let report = srv_b.call("acp.exchange.sync", json!({
+        "direction": "both",
+        "remote_bundle": remote_bundle,
+    })).await;
+
+    assert_eq!(report["direction"], "both");
+
+    // Pull side: received counts must be > 0 for the imported layers.
+    assert_eq!(report["received"]["semantic"], 1);
+    assert_eq!(report["received"]["episodes"], 1);
+    assert_eq!(report["received"]["nodes"], 1);
+    assert!(report["received"]["semantic"].as_u64().unwrap() > 0);
+
+    // Push side: a local bundle is returned so the peer can import it,
+    // and it now reflects the just-imported data.
+    assert!(report["bundle"].is_object(), "push must return a local bundle");
+    assert_eq!(
+        report["bundle"]["semantic_entries"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(report["sent"]["semantic"], 1);
+    assert_eq!(report["sent"]["episodes"], 1);
+
+    // The data actually landed in server B's store.
+    let stats = srv_b.call("acp.memory.stats", Value::Null).await;
+    assert_eq!(stats["semantic"], 1);
+    assert_eq!(stats["episodes"], 1);
+}
+
+#[tokio::test]
+async fn test_exchange_sync_push_only_omits_received() {
+    let srv = TestServer::in_memory();
+    srv.tool_call("acp_store", json!({ "content": "local only", "importance": 0.8 })).await;
+
+    let report = srv.call("acp.exchange.sync", json!({ "direction": "push" })).await;
+    assert_eq!(report["direction"], "push");
+    // Nothing pulled.
+    assert_eq!(report["received"]["semantic"], 0);
+    // Local bundle returned with the local entry.
+    assert!(report["bundle"].is_object());
+    assert_eq!(report["sent"]["semantic"], 1);
+}

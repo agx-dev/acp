@@ -230,6 +230,15 @@ impl SqliteStore {
         self.graph_read().export()
     }
 
+    /// Reset the in-memory graph engine to an empty state.
+    ///
+    /// Used by snapshot restore before reloading the graph from SQLite so the
+    /// engine ends up exactly matching the restored persisted state.
+    pub(crate) fn reset_graph_engine(&self) {
+        let mut engine = self.graph_write();
+        *engine = acp_graph::GraphEngine::new();
+    }
+
     /// Get the number of nodes in the graph.
     pub fn graph_node_count(&self) -> usize {
         self.graph_read().node_count()
@@ -305,6 +314,70 @@ impl SqliteStore {
 fn enum_to_sql<T: serde::Serialize>(val: &T) -> Result<String, AcpError> {
     let json = serde_json::to_value(val).map_err(|e| AcpError::Internal(e.to_string()))?;
     Ok(json.as_str().unwrap_or_default().to_string())
+}
+
+/// Insert a node into SQLite using an already-held connection.
+///
+/// Mirrors [`SqliteStore::persist_node`] but takes the connection directly so
+/// callers (e.g. snapshot restore) can reuse a guard they already hold without
+/// re-locking the non-reentrant SQLite mutex.
+pub(crate) fn insert_node(conn: &rusqlite::Connection, node: &Node) -> Result<(), AcpError> {
+    let embedding_blob: Option<Vec<u8>> = node
+        .embedding
+        .as_ref()
+        .map(|emb| emb.iter().flat_map(|f| f.to_le_bytes()).collect());
+
+    let node_type_sql = enum_to_sql(&node.node_type)?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO nodes (
+            id, node_type, label, properties, embedding,
+            episode_refs, semantic_refs, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            node.id.0,
+            node_type_sql,
+            node.label,
+            serde_json::to_string(&node.properties)
+                .map_err(|e| AcpError::Internal(e.to_string()))?,
+            embedding_blob,
+            serde_json::to_string(&node.episode_refs)
+                .map_err(|e| AcpError::Internal(e.to_string()))?,
+            serde_json::to_string(&node.semantic_refs)
+                .map_err(|e| AcpError::Internal(e.to_string()))?,
+            node.created_at.to_rfc3339(),
+            node.updated_at.to_rfc3339(),
+        ],
+    )
+    .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Insert an edge into SQLite using an already-held connection.
+///
+/// Mirrors [`SqliteStore::persist_edge`]; see [`insert_node`] for the rationale.
+pub(crate) fn insert_edge(conn: &rusqlite::Connection, edge: &Edge) -> Result<(), AcpError> {
+    let relation_sql = enum_to_sql(&edge.relation)?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO edges (
+            id, source, target, relation, weight, confidence, evidence, created_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            edge.id.0,
+            edge.source.0,
+            edge.target.0,
+            relation_sql,
+            edge.weight,
+            edge.confidence,
+            edge.evidence.as_ref().map(|e| &e.0),
+            edge.created_at.to_rfc3339(),
+        ],
+    )
+    .map_err(|e| AcpError::Internal(e.to_string()))?;
+
+    Ok(())
 }
 
 #[async_trait]
