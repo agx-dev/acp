@@ -72,3 +72,41 @@ pub struct ShareManifest {
     pub bundle: AgentBundle,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
+
+/// Direction of a bidirectional sync (`acp.exchange.sync`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncDirection {
+    /// Only send the local bundle to the peer (peer pulls).
+    Push,
+    /// Only import the peer's bundle into the local store.
+    Pull,
+    /// Import the peer's bundle *and* return the local bundle (default).
+    #[default]
+    Both,
+}
+
+/// Per-layer entry counts moved by a sync, in one direction.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SyncCounts {
+    pub episodes: u64,
+    pub semantic: u64,
+    pub nodes: u64,
+    pub edges: u64,
+    pub skills: u64,
+}
+
+/// Report returned by `acp.exchange.sync`.
+///
+/// `received` reflects entries imported from the peer's `remote_bundle`
+/// (populated for `pull`/`both`); `sent` reflects the local bundle offered to
+/// the peer (populated for `push`/`both`), and `bundle` carries that local
+/// [`AgentBundle`] so the peer can import it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncReport {
+    pub direction: SyncDirection,
+    pub received: SyncCounts,
+    pub sent: SyncCounts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle: Option<AgentBundle>,
+}

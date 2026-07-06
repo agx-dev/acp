@@ -437,5 +437,25 @@ pub fn mcp_tools() -> Vec<serde_json::Value> {
                 "required": ["recipient"]
             }
         }),
+        json!({
+            "name": "acp_exchange_sync",
+            "description": "Bidirectionally sync agent memory with a peer. For pull/both, imports the peer's remote_bundle; for push/both, returns the local bundle so the peer can import it. Reports received and sent counts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "direction": {
+                        "type": "string",
+                        "enum": ["push", "pull", "both"],
+                        "description": "push = send local bundle only; pull = import peer bundle only; both = do both",
+                        "default": "both"
+                    },
+                    "remote_bundle": {
+                        "type": "object",
+                        "description": "Peer AgentBundle to import (required for pull/both to receive anything)"
+                    }
+                },
+                "required": []
+            }
+        }),
     ]
 }
