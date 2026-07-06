@@ -11,10 +11,62 @@ fn require_params(params: &Value) -> Result<&Value, AcpError> {
     }
 }
 
+/// Map a wire method to its short audit event name (spec §11.4).
+/// Only methods that MUST be audited are returned; everything else yields `None`.
+fn audit_event_for(method: &str) -> Option<&'static str> {
+    match method {
+        "acp.memory.store" => Some("memory.store"),
+        "acp.memory.recall" => Some("memory.recall"),
+        "acp.memory.forget" => Some("memory.forget"),
+        "acp.memory.consolidate" => Some("memory.consolidate"),
+        "acp.skill.invoke" => Some("skill.invoke"),
+        "acp.version.snapshot" => Some("version.snapshot"),
+        "acp.version.restore" => Some("version.restore"),
+        "acp.exchange.share" => Some("exchange.share"),
+        _ => None,
+    }
+}
+
 impl AcpServer {
+    /// Public entry point: dispatch a JSON-RPC request, then (best-effort)
+    /// write an audit-trail entry for audited operations that succeeded.
+    ///
+    /// Audit writes are non-fatal: a failure is logged and the original
+    /// response is returned unchanged.
+    pub async fn handle_request(&self, request: JsonRpcRequest) -> JsonRpcResponse {
+        // Capture what we need before the request is moved into dispatch.
+        let method = request.method.clone();
+        let audit_event = audit_event_for(&method);
+        let actor = request
+            .params
+            .get("actor")
+            .and_then(|v| v.as_str())
+            .unwrap_or("agent:local")
+            .to_string();
+        let params = request.params.clone();
+
+        let response = self.dispatch(request).await;
+
+        // Log audited events only when the underlying call succeeded.
+        if let Some(event) = audit_event {
+            if response.error.is_none() {
+                let details = serde_json::json!({
+                    "method": method,
+                    "params": params,
+                    "result": response.result,
+                });
+                if let Err(e) = self.store.append_audit(event, &actor, &method, details) {
+                    tracing::warn!(event, method = %method, err = %e, "audit log write failed");
+                }
+            }
+        }
+
+        response
+    }
+
     /// Dispatch a JSON-RPC request to the appropriate handler.
     /// Supports both MCP protocol methods and native ACP methods.
-    pub async fn handle_request(&self, request: JsonRpcRequest) -> JsonRpcResponse {
+    async fn dispatch(&self, request: JsonRpcRequest) -> JsonRpcResponse {
         let result = match request.method.as_str() {
             // ── MCP standard methods ──────────────────────────
             "initialize" => self.mcp_initialize().await,
