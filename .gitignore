@@ -30,3 +30,10 @@ node_modules/
 docs/spec/
 docs/implementation/
 docs/integration/
+docs/superpowers/
+
+# Scientific paper (draft, not public)
+paper/
+
+# Local runtime storage
+.acp/

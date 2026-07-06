@@ -37,45 +37,43 @@ The server speaks MCP protocol (stdio transport). Configured in `.mcp.json`:
 ```
 
 MCP methods implemented: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`
-Tools exposed: `acp_recall`, `acp_store`, `acp_context`
+Tools exposed: 27 tools — memory (`acp_recall`, `acp_store`, `acp_memory_prune`, `acp_memory_consolidate`), graph (`acp_context`, `acp_graph_traverse`, `acp_graph_merge`, `acp_graph_remove_node`, `acp_graph_remove_edge`), skills (`acp_skill_*`), versions (`acp_version_snapshot|restore|diff|list|branch|merge`), exchange (`acp_exchange_export|import|share`), meta (`acp_capabilities`, `acp_health`)
 
 ## Protocol Methods (AcpMethod enum)
 
-23 methods defined in `acp-core/src/protocol/methods.rs`, grouped by conformance level:
+32 methods defined in `acp-core/src/protocol/methods.rs`, all wired to the handler and store. Grouped by conformance level:
+
+### Wire namespace note
+Graph ops use the **`acp.context.*`** namespace (canonical, per spec). The older
+**`acp.graph.*`** names remain accepted as deprecated aliases (parse + dispatch)
+but are NOT advertised in `acp.capabilities`.
 
 ### Core (implemented)
-- `acp.memory.store` / `recall` / `forget` / `stats` — via acp-store (SQLite + FTS5)
-- `acp.memory.prune` — trait + SQLite impl in MemoryStore::prune()
+- `acp.memory.store` / `recall` / `forget` / `stats` / `prune` — via acp-store (SQLite + FTS5)
+- `acp.exchange.export` / `import` — full agent bundles
+- `acp.capabilities` / `acp.health`
 
-### Standard (partially implemented)
-- `acp.context.addNode` / `addEdge` / `query` / `subgraph` — via acp-graph (in-memory)
-- `acp.graph.traverse` / `removeNode` / `removeEdge` — engine methods exist, NOT wired to handler
-- `acp.version.*` (snapshot/restore/diff/list) — trait defined, NO implementation yet
+### Standard (implemented)
+- `acp.context.add_node` / `add_edge` / `query` / `subgraph` / `traverse` / `remove_node` / `remove_edge`
+- `acp.version.snapshot` / `restore` / `diff` / `list`
+- `acp.exchange.share` — layer- & tag-filtered selective share with access level
+- `acp.memory.consolidate`
 
-### Full (NOT implemented)
-- `acp.skill.*` (register/resolve/get/update/export/list) — trait defined, NO handler
-- `acp.exchange.*` (export/import) — trait defined, NO handler
+### Full (implemented)
+- `acp.skill.register` / `resolve` / `get` / `update` / `export` / `list` / `invoke`
+- `acp.context.merge` — merge external graph with conflict strategy + namespace
+- `acp.version.branch` / `merge` — named branches over the snapshot store
 
 ## What's Left To Do
 
-1. **Wire remaining graph methods** to the MCP handler:
-   - `acp.graph.traverse` → `GraphEngine::traverse_bfs()`
-   - `acp.graph.removeNode` → `GraphEngine::remove_node()`
-   - `acp.graph.removeEdge` → `GraphEngine::remove_edge()`
+Core protocol is complete (32/32 methods wired, full test coverage). Remaining items are enhancements, not gaps:
 
-2. **Implement SkillRegistry** for acp-store (SQLite skills table exists, CRUD not wired)
-
-3. **Implement VersionManager** (snapshot/restore/diff of cognitive state)
-
-4. **Implement Exchange** (export/import full agent bundles)
-
-5. **Add MCP tools** for skills/versions/exchange when handlers are ready
-
-6. **OpenAI embeddings** — `acp-embeddings` has the provider behind `openai` feature flag, needs env var config in server
-
-7. **Graph persistence** — currently in-memory only, consider SQLite backing
-
-8. **AGX reference implementation** — the `/Users/Apple/SelfProject/AGX` repo is the reference impl that uses ACP
+1. **Audit trail** (spec §11.4) — a cross-cutting requirement (`DOIT` log store/recall/forget/share/…). Not yet implemented for ANY operation; would be a dedicated `audit` table + middleware.
+2. **Snapshot node/edge capture** — snapshots currently track episode/semantic/skill ids only; graph nodes/edges are not versioned (nodes_count=0 in `SnapshotStats`).
+3. **True branch isolation** — `version.branch`/`merge` are modeled as named snapshot pointers (adopt-on-merge), not copy-on-write parallel timelines.
+4. **OpenAI embeddings** — provider exists behind the `openai` feature flag; needs `--embedding-provider openai` + `OPENAI_API_KEY`.
+5. **`acp.exchange.sync`** — bidirectional sync (spec: OPTIONNEL/PEUT); not implemented and intentionally not advertised.
+6. **AGX reference implementation** — the `/Users/Apple/SelfProject/AGX` repo is the reference impl that uses ACP.
 
 ## Known Patterns & Pitfalls
 
