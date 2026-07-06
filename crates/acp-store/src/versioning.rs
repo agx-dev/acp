@@ -90,9 +90,7 @@ impl VersionManager for SqliteStore {
                 |row| row.get(0),
             )
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    AcpError::Internal(format!("Snapshot not found: {}", version))
-                }
+                rusqlite::Error::QueryReturnedNoRows => AcpError::VersionNotFound(version.to_string()),
                 other => AcpError::Internal(other.to_string()),
             })?;
 
@@ -220,7 +218,7 @@ impl VersionManager for SqliteStore {
                 )
                 .map_err(|e| match e {
                     rusqlite::Error::QueryReturnedNoRows => {
-                        AcpError::Internal(format!("Snapshot not found: {}", version))
+                        AcpError::VersionNotFound(version.to_string())
                     }
                     other => AcpError::Internal(other.to_string()),
                 })?;
@@ -317,6 +315,143 @@ impl VersionManager for SqliteStore {
     }
 }
 
+impl SqliteStore {
+    /// Resolve a snapshot reference (id or version number) to its snapshot id.
+    fn resolve_snapshot_id(&self, version: &str) -> Result<String, AcpError> {
+        let conn = self.conn();
+        conn.query_row(
+            "SELECT id FROM snapshots WHERE id = ?1 OR CAST(version AS TEXT) = ?1",
+            params![version],
+            |r| r.get::<_, String>(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => AcpError::VersionNotFound(version.to_string()),
+            other => AcpError::Internal(other.to_string()),
+        })
+    }
+
+    /// Create a named branch pointing at a snapshot (`acp.version.branch`).
+    ///
+    /// A branch is a named pointer to a checkpoint of cognitive state. When
+    /// `from_version` is omitted, a fresh snapshot of the current state is taken
+    /// and used as the branch base.
+    pub async fn branch(&self, config: BranchConfig) -> Result<BranchInfo, AcpError> {
+        let (head_snapshot, base_version) = match &config.from_version {
+            Some(v) => (self.resolve_snapshot_id(v)?, Some(v.clone())),
+            None => {
+                let info = self
+                    .snapshot(SnapshotConfig {
+                        reason: format!("branch base: {}", config.name),
+                        layers: vec![],
+                        tags: vec![format!("branch:{}", config.name)],
+                        parent: None,
+                    })
+                    .await?;
+                (info.id, None)
+            }
+        };
+
+        let created_at = chrono::Utc::now();
+        {
+            let conn = self.conn();
+            let res = conn.execute(
+                "INSERT INTO branches (name, head_snapshot, base_version, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    config.name,
+                    head_snapshot,
+                    base_version,
+                    created_at.to_rfc3339()
+                ],
+            );
+            match res {
+                Ok(_) => {}
+                Err(rusqlite::Error::SqliteFailure(e, _))
+                    if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    return Err(AcpError::InvalidParams(format!(
+                        "branch already exists: {}",
+                        config.name
+                    )));
+                }
+                Err(e) => return Err(AcpError::Internal(e.to_string())),
+            }
+        }
+
+        Ok(BranchInfo {
+            name: config.name,
+            head_snapshot,
+            base_version,
+            created_at,
+        })
+    }
+
+    /// Merge a branch back into the main line (`acp.version.merge`).
+    ///
+    /// `prefer_branch` adopts the branch's checkpointed state; `prefer_main`
+    /// keeps the current state. Either way a result snapshot is taken and the
+    /// applied delta is reported.
+    pub async fn merge_branch(
+        &self,
+        req: BranchMergeRequest,
+    ) -> Result<BranchMergeReport, AcpError> {
+        let head_snapshot: String = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT head_snapshot FROM branches WHERE name = ?1",
+                params![req.branch],
+                |r| r.get::<_, String>(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AcpError::VersionNotFound(format!("branch:{}", req.branch))
+                }
+                other => AcpError::Internal(other.to_string()),
+            })?
+        };
+
+        // Checkpoint the pre-merge state so we can report the applied delta.
+        let pre = self
+            .snapshot(SnapshotConfig {
+                reason: format!("pre-merge: {}", req.branch),
+                layers: vec![],
+                tags: vec![],
+                parent: None,
+            })
+            .await?;
+
+        if req.strategy == MergeStrategy::PreferBranch {
+            self.restore(&head_snapshot).await?;
+        }
+        // PreferMain keeps the current state (no-op).
+
+        let result = self
+            .snapshot(SnapshotConfig {
+                reason: format!("merge: {}", req.branch),
+                layers: vec![],
+                tags: vec![],
+                parent: Some(pre.id.clone()),
+            })
+            .await?;
+
+        let diff = self.diff(&pre.id, &result.id).await?;
+        let merged = DiffCounts {
+            episodes: diff.added.episodes + diff.removed.episodes,
+            semantic_entries: diff.added.semantic_entries + diff.removed.semantic_entries,
+            nodes: 0,
+            edges: 0,
+            skills: diff.added.skills + diff.removed.skills,
+        };
+
+        Ok(BranchMergeReport {
+            branch: req.branch,
+            strategy: req.strategy,
+            result_snapshot: result.id,
+            merged,
+        })
+    }
+}
+
 fn collect_ids(conn: &rusqlite::Connection, sql: &str) -> Result<Vec<String>, AcpError> {
     let mut stmt = conn
         .prepare(sql)
@@ -335,4 +470,113 @@ fn md5_hash(data: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     data.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use acp_core::types::semantic::SemanticSource;
+    use acp_core::{Confidence, Layer, MemoryStore, SemanticEntry, StoreEntry};
+
+    fn semantic(id: &str, content: &str) -> StoreEntry {
+        StoreEntry::Semantic(SemanticEntry {
+            id: EntryId(id.to_string()),
+            content: content.to_string(),
+            embedding: None,
+            source: SemanticSource::Manual,
+            confidence: Confidence::new(0.9).unwrap(),
+            importance: 0.5,
+            access_count: 0,
+            last_accessed: None,
+            tags: vec![],
+            category: None,
+            domain: None,
+            protected: false,
+            decay_rate: 0.01,
+            provenance: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_branch_from_current_state() {
+        let store = SqliteStore::in_memory().unwrap();
+        store.store(Layer::Semantic, semantic("sem-1", "A")).await.unwrap();
+
+        let info = store
+            .branch(BranchConfig {
+                name: "experiment".into(),
+                from_version: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(info.name, "experiment");
+        assert!(info.head_snapshot.starts_with("snap-"));
+    }
+
+    #[tokio::test]
+    async fn test_branch_duplicate_name_rejected() {
+        let store = SqliteStore::in_memory().unwrap();
+        store
+            .branch(BranchConfig { name: "b1".into(), from_version: None })
+            .await
+            .unwrap();
+        let err = store
+            .branch(BranchConfig { name: "b1".into(), from_version: None })
+            .await;
+        assert!(matches!(err, Err(AcpError::InvalidParams(_))));
+    }
+
+    #[tokio::test]
+    async fn test_branch_from_unknown_version_errors() {
+        let store = SqliteStore::in_memory().unwrap();
+        let err = store
+            .branch(BranchConfig {
+                name: "b".into(),
+                from_version: Some("does-not-exist".into()),
+            })
+            .await;
+        assert!(matches!(err, Err(AcpError::VersionNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_merge_prefer_branch_adopts_branch_state() {
+        let store = SqliteStore::in_memory().unwrap();
+        // Branch base captures only "A".
+        store.store(Layer::Semantic, semantic("sem-1", "A")).await.unwrap();
+        let branch = store
+            .branch(BranchConfig { name: "exp".into(), from_version: None })
+            .await
+            .unwrap();
+
+        // Main line diverges by adding "B".
+        store.store(Layer::Semantic, semantic("sem-2", "B")).await.unwrap();
+
+        let report = store
+            .merge_branch(BranchMergeRequest {
+                branch: "exp".into(),
+                strategy: MergeStrategy::PreferBranch,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(report.branch, "exp");
+        // Adopting the branch removes "B" -> one semantic entry changed.
+        assert_eq!(report.merged.semantic_entries, 1);
+        assert!(report.result_snapshot.starts_with("snap-"));
+        let _ = branch;
+    }
+
+    #[tokio::test]
+    async fn test_merge_unknown_branch_errors() {
+        let store = SqliteStore::in_memory().unwrap();
+        let err = store
+            .merge_branch(BranchMergeRequest {
+                branch: "ghost".into(),
+                strategy: MergeStrategy::PreferBranch,
+            })
+            .await;
+        assert!(matches!(err, Err(AcpError::VersionNotFound(_))));
+    }
 }

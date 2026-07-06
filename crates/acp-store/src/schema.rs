@@ -231,6 +231,17 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 
 -- =========================================================================
+-- 5b. BRANCHES (named pointers to snapshots)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS branches (
+    name            TEXT PRIMARY KEY,
+    head_snapshot   TEXT NOT NULL,
+    base_version    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- =========================================================================
 -- 6. METADATA
 -- =========================================================================
 

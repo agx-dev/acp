@@ -239,6 +239,66 @@ impl SqliteStore {
     pub fn graph_edge_count(&self) -> usize {
         self.graph_read().edge_count()
     }
+
+    /// Merge an external context graph (`acp.context.merge`).
+    ///
+    /// Incoming ids are optionally namespaced to avoid collisions with local
+    /// entities. On id collision the `conflict_strategy` decides whether the
+    /// local entry is kept (`prefer_local`) or overwritten (`prefer_remote`).
+    /// Edges whose endpoints are missing (or that would create a cycle) are
+    /// skipped. All changes are written through to SQLite.
+    pub async fn merge_graph(
+        &self,
+        req: GraphMergeRequest,
+    ) -> Result<GraphMergeReport, AcpError> {
+        let ns = req.namespace.as_deref().filter(|n| !n.is_empty());
+        let apply_ns = |id: &EntryId| -> EntryId {
+            match ns {
+                Some(n) => EntryId(format!("{n}:{}", id.0)),
+                None => id.clone(),
+            }
+        };
+
+        let mut report = GraphMergeReport {
+            conflict_strategy: req.conflict_strategy,
+            ..Default::default()
+        };
+
+        for mut node in req.external_graph.nodes {
+            node.id = apply_ns(&node.id);
+            let exists = self.graph_read().get_node(&node.id.0).is_some();
+            if exists {
+                match req.conflict_strategy {
+                    ConflictStrategy::PreferLocal => report.nodes_skipped += 1,
+                    ConflictStrategy::PreferRemote => {
+                        self.add_node(node).await?;
+                        report.nodes_overwritten += 1;
+                    }
+                }
+            } else {
+                self.add_node(node).await?;
+                report.nodes_added += 1;
+            }
+        }
+
+        for mut edge in req.external_graph.edges {
+            edge.id = apply_ns(&edge.id);
+            edge.source = apply_ns(&edge.source);
+            edge.target = apply_ns(&edge.target);
+
+            if self.graph_read().get_edge(&edge.id.0).is_some() {
+                report.edges_skipped += 1;
+                continue;
+            }
+            match self.add_edge(edge).await {
+                Ok(_) => report.edges_added += 1,
+                // Missing endpoint or would-create-cycle: skip rather than fail the whole merge.
+                Err(_) => report.edges_skipped += 1,
+            }
+        }
+
+        Ok(report)
+    }
 }
 
 /// Convert a serde-serializable enum to its lowercase SQL string.
@@ -449,6 +509,87 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].label, "JWT lib");
+    }
+
+    #[tokio::test]
+    async fn test_merge_external_graph_adds_and_namespaces() {
+        let store = SqliteStore::in_memory().unwrap();
+        store.add_node(test_node("local1", "Local")).await.unwrap();
+
+        let req = GraphMergeRequest {
+            external_graph: ExternalGraph {
+                nodes: vec![test_node("n1", "Remote A"), test_node("n2", "Remote B")],
+                edges: vec![test_edge("e1", "n1", "n2")],
+            },
+            conflict_strategy: ConflictStrategy::PreferLocal,
+            namespace: Some("peer".to_string()),
+        };
+
+        let report = store.merge_graph(req).await.unwrap();
+        assert_eq!(report.nodes_added, 2);
+        assert_eq!(report.edges_added, 1);
+        assert_eq!(store.graph_node_count(), 3); // local1 + peer:n1 + peer:n2
+
+        // Namespaced ids are what got stored.
+        assert!(store.graph_read().get_node("peer:n1").is_some());
+        assert!(store.graph_read().get_node("n1").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_merge_conflict_strategies() {
+        let store = SqliteStore::in_memory().unwrap();
+        store.add_node(test_node("n1", "Original")).await.unwrap();
+
+        // prefer_local: existing node kept, incoming skipped.
+        let report = store
+            .merge_graph(GraphMergeRequest {
+                external_graph: ExternalGraph {
+                    nodes: vec![test_node("n1", "Incoming")],
+                    edges: vec![],
+                },
+                conflict_strategy: ConflictStrategy::PreferLocal,
+                namespace: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.nodes_skipped, 1);
+        assert_eq!(report.nodes_added, 0);
+        assert_eq!(store.graph_read().get_node("n1").unwrap().label, "Original");
+
+        // prefer_remote: existing node overwritten.
+        let report = store
+            .merge_graph(GraphMergeRequest {
+                external_graph: ExternalGraph {
+                    nodes: vec![test_node("n1", "Incoming")],
+                    edges: vec![],
+                },
+                conflict_strategy: ConflictStrategy::PreferRemote,
+                namespace: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.nodes_overwritten, 1);
+        assert_eq!(store.graph_read().get_node("n1").unwrap().label, "Incoming");
+    }
+
+    #[tokio::test]
+    async fn test_merge_skips_dangling_edges() {
+        let store = SqliteStore::in_memory().unwrap();
+        let report = store
+            .merge_graph(GraphMergeRequest {
+                external_graph: ExternalGraph {
+                    nodes: vec![test_node("n1", "A")],
+                    // e1 references n2 which is not part of the merge -> skipped.
+                    edges: vec![test_edge("e1", "n1", "n2")],
+                },
+                conflict_strategy: ConflictStrategy::PreferLocal,
+                namespace: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.nodes_added, 1);
+        assert_eq!(report.edges_added, 0);
+        assert_eq!(report.edges_skipped, 1);
     }
 
     #[tokio::test]
