@@ -210,8 +210,9 @@ mod tests {
     #[test]
     fn test_mcp_tools_definitions() {
         let tools = acp_server::mcp::tools::mcp_tools();
-        assert_eq!(tools.len(), 27);
+        assert_eq!(tools.len(), 28);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"acp_exchange_sync"));
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));
         assert!(names.contains(&"acp_context"));
@@ -278,7 +279,7 @@ mod tests {
             .await;
         assert!(resp.error.is_none());
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        assert_eq!(tools.len(), 27);
+        assert_eq!(tools.len(), 28);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"acp_recall"));
         assert!(names.contains(&"acp_store"));

@@ -19,7 +19,8 @@ pub use types::*;
 pub use ops::{
     AccessLevel, AgentBundle, ConsolidationConfig, ConsolidationResult, ContextGraphStore,
     Exchange, MemoryStats, MemoryStore, RecallEntry, RecallQuery, RecallResult, ShareCounts,
-    ShareFilter, ShareManifest, SkillRegistry, StoreEntry, VersionManager,
+    ShareFilter, ShareManifest, SkillRegistry, StoreEntry, SyncCounts, SyncDirection, SyncReport,
+    VersionManager,
 };
 
 // Re-export protocol items.

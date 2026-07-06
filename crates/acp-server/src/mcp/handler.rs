@@ -72,6 +72,7 @@ impl AcpServer {
             "acp.exchange.export" => self.handle_exchange_export().await,
             "acp.exchange.import" => self.handle_exchange_import(&request.params).await,
             "acp.exchange.share" => self.handle_exchange_share(&request.params).await,
+            "acp.exchange.sync" => self.handle_exchange_sync(&request.params).await,
 
             "acp.initialize" => self.mcp_initialize().await,
             "acp.ping" => Ok(json!({"pong": true})),
@@ -172,6 +173,7 @@ impl AcpServer {
             "acp_exchange_export" => self.handle_exchange_export().await,
             "acp_exchange_import" => self.handle_exchange_import(arguments).await,
             "acp_exchange_share" => self.handle_exchange_share(arguments).await,
+            "acp_exchange_sync" => self.handle_exchange_sync(arguments).await,
             "acp_capabilities" => self.handle_capabilities().await,
             "acp_health" => self.handle_health().await,
             other => Err(AcpError::MethodNotFound(format!("Unknown tool: {}", other))),
@@ -799,6 +801,95 @@ impl AcpServer {
         };
 
         serde_json::to_value(&manifest).map_err(|e| AcpError::Internal(e.to_string()))
+    }
+
+    /// `acp.exchange.sync` — bidirectional sync with a peer (Conformance: Full, optional).
+    ///
+    /// For `pull`/`both`: imports the peer's `remote_bundle` and reports `received`
+    /// counts. For `push`/`both`: also exports the LOCAL bundle (so the peer can
+    /// import it) and reports `sent` counts. Returns `{ direction, received, sent,
+    /// bundle }` where `bundle` is the local [`AgentBundle`] when pushing.
+    async fn handle_exchange_sync(&self, params: &Value) -> Result<Value, AcpError> {
+        let direction: acp_core::SyncDirection = params
+            .get("direction")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let do_pull = matches!(
+            direction,
+            acp_core::SyncDirection::Pull | acp_core::SyncDirection::Both
+        );
+        let do_push = matches!(
+            direction,
+            acp_core::SyncDirection::Push | acp_core::SyncDirection::Both
+        );
+
+        // ── Pull: import the peer's remote_bundle into the local store ──
+        let mut received = acp_core::SyncCounts::default();
+        if do_pull {
+            if let Some(remote) = params.get("remote_bundle").filter(|v| !v.is_null()) {
+                let bundle: AgentBundle = serde_json::from_value(remote.clone())
+                    .map_err(|e| AcpError::InvalidParams(e.to_string()))?;
+
+                received.episodes = self.store.import_episodes(&bundle.episodes)?;
+                received.semantic = self.store.import_semantic(&bundle.semantic_entries)?;
+                for node in bundle.nodes {
+                    if self.store.add_node(node).await.is_ok() {
+                        received.nodes += 1;
+                    }
+                }
+                for edge in bundle.edges {
+                    if self.store.add_edge(edge).await.is_ok() {
+                        received.edges += 1;
+                    }
+                }
+                for skill in bundle.skills {
+                    if self.store.register(skill).await.is_ok() {
+                        received.skills += 1;
+                    }
+                }
+            }
+        }
+
+        // ── Push: export the local bundle so the peer can import it ──
+        let mut sent = acp_core::SyncCounts::default();
+        let mut out_bundle: Option<AgentBundle> = None;
+        if do_push {
+            let episodes = self.store.export_all_episodes()?;
+            let semantic_entries = self.store.export_all_semantic()?;
+            let skills = SkillRegistry::list(&self.store).await?;
+            let snapshots = VersionManager::list(&self.store).await?;
+            let graph = self.store.engine_export();
+            let nodes = graph.nodes;
+            let edges = graph.edges;
+
+            sent = acp_core::SyncCounts {
+                episodes: episodes.len() as u64,
+                semantic: semantic_entries.len() as u64,
+                nodes: nodes.len() as u64,
+                edges: edges.len() as u64,
+                skills: skills.len() as u64,
+            };
+
+            out_bundle = Some(AgentBundle {
+                identity: AgentIdentity::new("acp-agent", ConformanceLevel::Full),
+                episodes,
+                semantic_entries,
+                nodes,
+                edges,
+                skills,
+                snapshots,
+            });
+        }
+
+        let report = acp_core::SyncReport {
+            direction,
+            received,
+            sent,
+            bundle: out_bundle,
+        };
+
+        serde_json::to_value(&report).map_err(|e| AcpError::Internal(e.to_string()))
     }
 
     async fn handle_skill_resolve(&self, params: &Value) -> Result<Value, AcpError> {
